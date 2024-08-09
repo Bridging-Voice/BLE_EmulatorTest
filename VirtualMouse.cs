@@ -6,7 +6,7 @@ using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Storage.Streams;
 
 namespace BLE_EmulatorTest;
-class VirtualKeyboard
+class VirtualMouse
 {
     private static readonly GattLocalCharacteristicParameters c_hidInputReportParameters = new GattLocalCharacteristicParameters
     {
@@ -16,12 +16,12 @@ class VirtualKeyboard
 
     private static readonly uint c_hidReportReferenceDescriptorShortUuid = 0x2908;
 
-    private static readonly GattLocalDescriptorParameters c_hidKeyboardReportReferenceParameters = new GattLocalDescriptorParameters
+    private static readonly GattLocalDescriptorParameters c_hidMouseReportReferenceParameters = new GattLocalDescriptorParameters
     {
         ReadProtectionLevel = GattProtectionLevel.EncryptionRequired,
         StaticValue = new byte[]
         {
-            0x01, // Report ID: 1
+            0x02, // Report ID: 1
             0x01  // Report Type: Input
         }.AsBuffer()
     };
@@ -32,30 +32,32 @@ class VirtualKeyboard
         ReadProtectionLevel = GattProtectionLevel.EncryptionRequired,                        
         StaticValue = new byte[]
         {
-            0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
-            0x09, 0x06,        // Usage (Keyboard)
-            0xA1, 0x01,        // Collection (Application)
-            0x85, 0x01,        //   Report ID
-            0x05, 0x07,        //   Usage Page (Kbrd/Keypad)
-            0x19, 0xE0,        //   Usage Minimum (0xE0)
-            0x29, 0xE7,        //   Usage Maximum (0xE7)
-            0x15, 0x00,        //   Logical Minimum (0)
-            0x25, 0x01,        //   Logical Maximum (1)
-            0x95, 0x08,        //   Report Count (8)
-            0x75, 0x01,        //   Report Size (1)
-            0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
-            0x95, 0x01,        //   Report Count (1)
-            0x75, 0x08,        //   Report Size (8)
-            0x81, 0x01,        //   Input (Const,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
-            0x05, 0x07,        //   Usage Page (Kbrd/Keypad)
-            0x19, 0x00,        //   Usage Minimum (0x00)
-            0x2a, 0xff, 0x00,  //   Usage Maximum (255)
-            0x15, 0x00,        //   Logical Minimum (0)
-            0x26, 0xff, 0x00,  //   Logical Maximum (255)
-            0x95, 0x06,        //   Report Count (6)
-            0x75, 0x08,        //   Report Size (8)
-            0x81, 0x00,        //   Input (Data,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
-            0xC0,              // End Collection
+            0x05, 0x01,                         // USAGE_PAGE (Generic Desktop)     0
+            0x09, 0x02,                         // USAGE (Mouse)                    2
+            0xa1, 0x01,                         // COLLECTION (Application)         4
+            0x85, 0x02,                         //   REPORT_ID (Mouse)              6
+            0x09, 0x01,                         //   USAGE (Pointer)                8
+            0xa1, 0x00,                         //   COLLECTION (Physical)          10
+            0x05, 0x09,                         //     USAGE_PAGE (Button)          12
+            0x19, 0x01,                         //     USAGE_MINIMUM (Button 1)     14
+            0x29, 0x02,                         //     USAGE_MAXIMUM (Button 2)     16
+            0x15, 0x00,                         //     LOGICAL_MINIMUM (0)          18
+            0x25, 0x01,                         //     LOGICAL_MAXIMUM (1)          20
+            0x75, 0x01,                         //     REPORT_SIZE (1)              22
+            0x95, 0x02,                         //     REPORT_COUNT (2)             24
+            0x81, 0x02,                         //     INPUT (Data,Var,Abs)         26
+            0x95, 0x06,                         //     REPORT_COUNT (6)             28
+            0x81, 0x03,                         //     INPUT (Cnst,Var,Abs)         30
+            0x05, 0x01,                         //     USAGE_PAGE (Generic Desktop) 32
+            0x09, 0x30,                         //     USAGE (X)                    34
+            0x09, 0x31,                         //     USAGE (Y)                    36
+            0x15, 0x81,                         //     LOGICAL_MINIMUM (-127)       38
+            0x25, 0x7f,                         //     LOGICAL_MAXIMUM (127)        40
+            0x75, 0x08,                         //     REPORT_SIZE (8)              42
+            0x95, 0x02,                         //     REPORT_COUNT (2)             44
+            0x81, 0x06,                         //     INPUT (Data,Var,Rel)         46
+            0xc0,                               //   END_COLLECTION                 48
+            0xc0                                // END_COLLECTION                   49/50
         }.AsBuffer()
     };
 
@@ -83,12 +85,12 @@ class VirtualKeyboard
         ReadProtectionLevel = GattProtectionLevel.Plain
     };
 
-    private static readonly uint c_sizeOfKeyboardReportDataInBytes = 0x8;
+    private static readonly uint c_sizeOfMouseReportDataInBytes = 0x3;
 
     private GattServiceProvider m_hidServiceProvider;
     private GattLocalService m_hidService;
-    private GattLocalCharacteristic m_hidKeyboardReport;
-    private GattLocalDescriptor m_hidKeyboardReportReference;
+    private GattLocalCharacteristic m_hidMouseReport;
+    private GattLocalDescriptor m_hidMouseReportReference;
     private GattLocalCharacteristic m_hidReportMap;
     private GattLocalCharacteristic m_hidInformation;
     private GattLocalCharacteristic m_hidControlPoint;
@@ -97,9 +99,7 @@ class VirtualKeyboard
 
     private bool m_initializationFinished = false;
 
-    private HashSet<byte> m_currentlyDepressedModifierKeys = new HashSet<byte>();
-    private HashSet<byte> m_currentlyDepressedKeys = new HashSet<byte>();
-    private byte[] m_lastSentKeyboardReportValue = new byte[c_sizeOfKeyboardReportDataInBytes];
+    private byte[] m_lastSentMouseReportValue = new byte[c_sizeOfMouseReportDataInBytes];
 
     public delegate void SubscribedHidClientsChangedHandler(IReadOnlyList<GattSubscribedClient> subscribedClients);
     public event SubscribedHidClientsChangedHandler SubscribedHidClientsChanged;
@@ -134,23 +134,11 @@ class VirtualKeyboard
         UnpublishService(m_hidServiceProvider);
     }
 
-    public void PressKey(uint ps2Set1keyScanCode)
+    public void MoveMouse(int mx, int my)
     {
         try
         {
-            ChangeKeyState(KeyEvent.KeyMake, HidHelper.GetHidUsageFromPs2Set1(ps2Set1keyScanCode));
-        }
-        catch (Exception e)
-        {
-            Debug.WriteLine("Failed to change the key state due to: " + e.Message);
-        }
-    }
-
-    public void ReleaseKey(uint ps2Set1keyScanCode)
-    {
-        try
-        {
-            ChangeKeyState(KeyEvent.KeyBreak, HidHelper.GetHidUsageFromPs2Set1(ps2Set1keyScanCode));
+            ChangeMouseState(false, false, mx, my);
         }
         catch (Exception e)
         {
@@ -170,24 +158,24 @@ class VirtualKeyboard
         m_hidServiceProvider = hidServiceProviderCreationResult.ServiceProvider;
         m_hidService = m_hidServiceProvider.Service;
 
-        // HID keyboard Report characteristic.
-        var hidKeyboardReportCharacteristicCreationResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.Report, c_hidInputReportParameters);
-        if (hidKeyboardReportCharacteristicCreationResult.Error != BluetoothError.Success)
+        // HID mouse Report characteristic.
+        var hidMouseReportCharacteristicCreationResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.Report, c_hidInputReportParameters);
+        if (hidMouseReportCharacteristicCreationResult.Error != BluetoothError.Success)
         {
-            Debug.WriteLine("Failed to create the keyboard report characteristic: " + hidKeyboardReportCharacteristicCreationResult.Error);
-            throw new Exception("Failed to create the keyboard report characteristic: " + hidKeyboardReportCharacteristicCreationResult.Error);
+            Debug.WriteLine("Failed to create the mouse report characteristic: " + hidMouseReportCharacteristicCreationResult.Error);
+            throw new Exception("Failed to create the mouse report characteristic: " + hidMouseReportCharacteristicCreationResult.Error);
         }
-        m_hidKeyboardReport = hidKeyboardReportCharacteristicCreationResult.Characteristic;
-        m_hidKeyboardReport.SubscribedClientsChanged += HidKeyboardReport_SubscribedClientsChanged;
+        m_hidMouseReport = hidMouseReportCharacteristicCreationResult.Characteristic;
+        m_hidMouseReport.SubscribedClientsChanged += HidMouseReport_SubscribedClientsChanged;
 
-        // HID keyboard Report Reference descriptor.
-        var hidKeyboardReportReferenceCreationResult = await m_hidKeyboardReport.CreateDescriptorAsync(BluetoothUuidHelper.FromShortId(c_hidReportReferenceDescriptorShortUuid), c_hidKeyboardReportReferenceParameters);
-        if (hidKeyboardReportReferenceCreationResult.Error != BluetoothError.Success)
+        // HID mouse Report Reference descriptor.
+        var hidMouseReportReferenceCreationResult = await m_hidMouseReport.CreateDescriptorAsync(BluetoothUuidHelper.FromShortId(c_hidReportReferenceDescriptorShortUuid), c_hidMouseReportReferenceParameters);
+        if (hidMouseReportReferenceCreationResult.Error != BluetoothError.Success)
         {
-            Debug.WriteLine("Failed to create the keyboard report reference descriptor: " + hidKeyboardReportReferenceCreationResult.Error);
-            throw new Exception("Failed to create the keyboard report reference descriptor: " + hidKeyboardReportReferenceCreationResult.Error);
+            Debug.WriteLine("Failed to create the mouse report reference descriptor: " + hidMouseReportReferenceCreationResult.Error);
+            throw new Exception("Failed to create the mouse report reference descriptor: " + hidMouseReportReferenceCreationResult.Error);
         }
-        m_hidKeyboardReportReference = hidKeyboardReportReferenceCreationResult.Descriptor;
+        m_hidMouseReportReference = hidMouseReportReferenceCreationResult.Descriptor;
 
         // HID Report Map characteristic.
         var hidReportMapCharacteristicCreationResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.ReportMap, c_hidReportMapParameters);
@@ -270,13 +258,13 @@ class VirtualKeyboard
         Debug.WriteLine("HID advertisement status changed to " + args.Status);
     }
 
-    private void HidKeyboardReport_SubscribedClientsChanged(GattLocalCharacteristic sender, object args)
+    private void HidMouseReport_SubscribedClientsChanged(GattLocalCharacteristic sender, object args)
     {
-        Debug.WriteLine("Number of clients now registered for keyboard notifications: " + sender.SubscribedClients.Count);
+        Debug.WriteLine("Number of clients now registered for mouse notifications: " + sender.SubscribedClients.Count);
         SubscribedHidClientsChanged?.Invoke(sender.SubscribedClients);
     }
 
-    private void ChangeKeyState(KeyEvent keyEvent, byte hidUsageScanCode)
+    private void ChangeMouseState(bool leftDown, bool rightDown, int mx, int my)
     {
         lock (m_lock)
         {
@@ -285,72 +273,27 @@ class VirtualKeyboard
                 return;
             }
 
-            if (keyEvent == KeyEvent.KeyMake)
+            if (m_hidMouseReport.SubscribedClients.Count == 0)
             {
-                if (HidHelper.IsMofifierKey(hidUsageScanCode))
-                {
-                    Debug.WriteLine("Modifier key depressed: " + hidUsageScanCode);
-                    m_currentlyDepressedModifierKeys.Add(hidUsageScanCode);
-                }
-                else
-                {
-                    Debug.WriteLine("Key depressed: " + hidUsageScanCode);
-                    m_currentlyDepressedKeys.Add(hidUsageScanCode);
-                }
-            }
-            else
-            {
-                if (HidHelper.IsMofifierKey(hidUsageScanCode))
-                {
-                    Debug.WriteLine("Modifier key released: " + hidUsageScanCode);
-                    m_currentlyDepressedModifierKeys.Remove(hidUsageScanCode);
-                }
-                else
-                {
-                    Debug.WriteLine("Key released: " + hidUsageScanCode);
-                    m_currentlyDepressedKeys.Remove(hidUsageScanCode);
-                }
-            }
-
-            if (m_hidKeyboardReport.SubscribedClients.Count == 0)
-            {
-                Debug.WriteLine("No clients are currently subscribed to the keyboard report.");
+                Debug.WriteLine("No clients are currently subscribed to the mouse report.");
                 return;
             }
 
-            var reportValue = new byte[c_sizeOfKeyboardReportDataInBytes];
+            var reportValue = new byte[c_sizeOfMouseReportDataInBytes];
 
-            // The first byte of the report data is a modifier key bitfield.
-            reportValue[0] = 0x0;
-            foreach (var modifierKeyPressedScanCode in m_currentlyDepressedModifierKeys)
-            {
-                reportValue[0] |= HidHelper.GetFlagOfModifierKey(modifierKeyPressedScanCode);
-            }
+            // The first byte of the report data is buttons bitfield.
+            reportValue[0] = (byte)((leftDown ? (1 << 7) : 0) | (rightDown ? (1 << 6) : 0));
 
-            // The second byte up to the last byte represent one key per byte.
-            int reportIndex = 2;
-            foreach (var keyPressedScanCode in m_currentlyDepressedKeys)
-            {
-                if (reportIndex >= reportValue.Length)
-                {
-                    Debug.WriteLine("Too many keys currently depressed to fit into the report data. Truncating.");
-                    break;
-                }
+            reportValue[1] = (byte)(sbyte)mx;
+            reportValue[2] = (byte)(sbyte)my;
 
-                reportValue[reportIndex] = keyPressedScanCode;
-                reportIndex++;
-            }
+            Debug.WriteLine("Sending mouse report value notification with data: " + GetStringFromBuffer(reportValue));
+            reportValue.CopyTo(m_lastSentMouseReportValue, 0);
 
-            //if (!reportValue.SequenceEqual(m_lastSentKeyboardReportValue))
-            {
-                Debug.WriteLine("Sending keyboard report value notification with data: " + GetStringFromBuffer(reportValue));
-                reportValue.CopyTo(m_lastSentKeyboardReportValue, 0);
-
-                // Waiting for this operation to complete is no longer necessary since now ordering of notifications
-                // is guaranteed for each client. Not waiting for it to complete reduces delays and lags.
-                // Note that doing this makes us unable to know if the notification failed to be sent.
-                var asyncOp = m_hidKeyboardReport.NotifyValueAsync(reportValue.AsBuffer());
-            }
+            // Waiting for this operation to complete is no longer necessary since now ordering of notifications
+            // is guaranteed for each client. Not waiting for it to complete reduces delays and lags.
+            // Note that doing this makes us unable to know if the notification failed to be sent.
+            var asyncOp = m_hidMouseReport.NotifyValueAsync(reportValue.AsBuffer());
         }
     }
 }
