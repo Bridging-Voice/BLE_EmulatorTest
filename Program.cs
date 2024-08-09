@@ -1,5 +1,4 @@
-﻿using BluetoothLEExplorer.Models;
-using Windows.Devices.Bluetooth;
+﻿using Windows.Devices.Bluetooth;
 
 namespace BLE_EmulatorTest;
 
@@ -39,7 +38,7 @@ class Program
     private static void Test()
     {
         Thread.Sleep(1000);
-        for (int i = 0; i < 10; i++)
+        for (int i = 0; i < 20; i++)
         {
             m_virtualKeyboard.PressKey(0x05);
             Thread.Sleep(100);
