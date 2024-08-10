@@ -29,8 +29,8 @@ class Program
             Console.WriteLine("Error: " + e.ToString());
         }
 
-        //Test();
-        run_server();
+        //await Test();
+        await run_server();
     }
 
     private static async void VirtualKeyboard_SubscribedHidClientsChanged(IReadOnlyList<Windows.Devices.Bluetooth.GenericAttributeProfile.GattSubscribedClient> subscribedClients)
@@ -57,40 +57,40 @@ class Program
         }
     }
 
-    private static void Test()
+    private static async Task Test()
     {
-        Thread.Sleep(1000);
+        await Task.Delay(1000);
 
         for (int i = 0; i < 10; i++)
         {
-            m_virtualKeyboard.PressKey(0x05);
-            Thread.Sleep(100);
-            m_virtualKeyboard.ReleaseKey(0x05);
-            Thread.Sleep(100);
-            m_virtualKeyboard.PressKey(0x1e);
-            Thread.Sleep(100);
-            m_virtualKeyboard.ReleaseKey(0x1e);
-            Thread.Sleep(100);
+            await m_virtualKeyboard.PressKey(0x05);
+            await Task.Delay(100);
+            await m_virtualKeyboard.ReleaseKey(0x05);
+            await Task.Delay(100);
+            await m_virtualKeyboard.PressKey(0x1e);
+            await Task.Delay(100);
+            await m_virtualKeyboard.ReleaseKey(0x1e);
+            await Task.Delay(100);
         }
 
         for (int i = 0; i < 10; i++)
         {
-            m_virtualMouse.Move(-10, -10);
-            Thread.Sleep(300);
+            await m_virtualMouse.Move(-10, -10);
+            await Task.Delay(300);
         }
     
         for (int i = 0; i < 10; i++)
         {
-            m_virtualMouse.Move(10, 10);
-            Thread.Sleep(300);
+            await m_virtualMouse.Move(10, 10);
+            await Task.Delay(300);
         }
 
         for (int i = 0; i < 4; i++)
         {
             m_virtualMouse.Press();
-            Thread.Sleep(300);
+            await Task.Delay(300);
             m_virtualMouse.Release();
-            Thread.Sleep(300);
+            await Task.Delay(300);
         }
     }
 
@@ -113,7 +113,7 @@ class Program
         Console.WriteLine("Wrote: \"{0}\"", str);
     }
 
-    private static void run_server()
+    private static async Task run_server()
     {
         // Open the named pipe.
         NamedPipeServerStream server = null;
@@ -145,7 +145,7 @@ class Program
                 else if (str.StartsWith("AT+BLEHIDMOUSEMOVE"))
                 {
                     var args = str.Split(new char[] { '=', '\r', '\n' })[1].Split(',');
-                    m_virtualMouse.Move(int.Parse(args[0]), int.Parse(args[1]));
+                    await m_virtualMouse.Move(int.Parse(args[0]), int.Parse(args[1]));
                     WriteString("OK\n");
                 }
                 else if (str.StartsWith("AT+BLEHIDMOUSEBUTTON"))
@@ -155,16 +155,16 @@ class Program
                     {
                         if (args[1] == "press")
                         {
-                            m_virtualMouse.Press();
+                            await m_virtualMouse.Press();
                         }
                         else if (args[1] == "click")
                         {
-                            m_virtualMouse.Click();
+                            await m_virtualMouse.Click();
                         }
                     }
                     else if (args[0] == "0")
                     {
-                        m_virtualMouse.Release();
+                        await m_virtualMouse.Release();
                     }
                     WriteString("OK\n");
                 }
@@ -176,7 +176,7 @@ class Program
                     {
                         reportValue[i] = byte.Parse(args[i], NumberStyles.HexNumber);
                     }
-                    m_virtualKeyboard.DirectSendReport(reportValue);
+                    await m_virtualKeyboard.DirectSendReport(reportValue);
                     WriteString("OK\n");
                 }
                 else

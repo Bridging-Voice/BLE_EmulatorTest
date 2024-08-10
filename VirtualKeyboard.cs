@@ -134,11 +134,11 @@ class VirtualKeyboard
         UnpublishService(m_hidServiceProvider);
     }
 
-    public void PressKey(uint ps2Set1keyScanCode)
+    public async Task PressKey(uint ps2Set1keyScanCode)
     {
         try
         {
-            ChangeKeyState(KeyEvent.KeyMake, HidHelper.GetHidUsageFromPs2Set1(ps2Set1keyScanCode));
+            await ChangeKeyState(KeyEvent.KeyMake, HidHelper.GetHidUsageFromPs2Set1(ps2Set1keyScanCode));
         }
         catch (Exception e)
         {
@@ -146,11 +146,11 @@ class VirtualKeyboard
         }
     }
 
-    public void ReleaseKey(uint ps2Set1keyScanCode)
+    public async Task ReleaseKey(uint ps2Set1keyScanCode)
     {
         try
         {
-            ChangeKeyState(KeyEvent.KeyBreak, HidHelper.GetHidUsageFromPs2Set1(ps2Set1keyScanCode));
+            await ChangeKeyState(KeyEvent.KeyBreak, HidHelper.GetHidUsageFromPs2Set1(ps2Set1keyScanCode));
         }
         catch (Exception e)
         {
@@ -276,9 +276,9 @@ class VirtualKeyboard
         SubscribedHidClientsChanged?.Invoke(sender.SubscribedClients);
     }
 
-    private void ChangeKeyState(KeyEvent keyEvent, byte hidUsageScanCode)
+    private async Task ChangeKeyState(KeyEvent keyEvent, byte hidUsageScanCode)
     {
-        lock (m_lock)
+        //lock (m_lock)
         {
             if (!m_initializationFinished)
             {
@@ -349,12 +349,12 @@ class VirtualKeyboard
                 // Waiting for this operation to complete is no longer necessary since now ordering of notifications
                 // is guaranteed for each client. Not waiting for it to complete reduces delays and lags.
                 // Note that doing this makes us unable to know if the notification failed to be sent.
-                var asyncOp = m_hidKeyboardReport.NotifyValueAsync(reportValue.AsBuffer());
+                await m_hidKeyboardReport.NotifyValueAsync(reportValue.AsBuffer());
             }
         }
     }
 
-    public void DirectSendReport(byte[] reportValue)
+    public async Task DirectSendReport(byte[] reportValue)
     {
         if (reportValue.Length != c_sizeOfKeyboardReportDataInBytes)
         {
@@ -362,6 +362,6 @@ class VirtualKeyboard
             return;
         }
 
-        var asyncOp = m_hidKeyboardReport.NotifyValueAsync(reportValue.AsBuffer());
+        await m_hidKeyboardReport.NotifyValueAsync(reportValue.AsBuffer());
     }
 }

@@ -99,7 +99,8 @@ class VirtualMouse
 
     private bool m_initializationFinished = false;
 
-    private byte[] m_lastSentMouseReportValue = new byte[c_sizeOfMouseReportDataInBytes];
+    private bool m_lastLeftDown = false;
+    private bool m_lastRightDown = false;
 
     public delegate void SubscribedHidClientsChangedHandler(IReadOnlyList<GattSubscribedClient> subscribedClients);
     public event SubscribedHidClientsChangedHandler SubscribedHidClientsChanged;
@@ -134,11 +135,11 @@ class VirtualMouse
         UnpublishService(m_hidServiceProvider);
     }
 
-    public void Move(int mx, int my)
+    public async Task Move(int mx, int my)
     {
         try
         {
-            ChangeMouseState(false, false, mx, my);
+            await SendMouseState(m_lastLeftDown, m_lastRightDown, mx, my);
         }
         catch (Exception e)
         {
@@ -146,11 +147,11 @@ class VirtualMouse
         }
     }
 
-    public void Press()
+    public async Task Press()
     {
         try
         {
-            ChangeMouseState(true, false, 0, 0);
+            await SendMouseState(true, false, 0, 0);
         }
         catch (Exception e)
         {
@@ -158,11 +159,11 @@ class VirtualMouse
         }
     }
 
-    public void Release()
+    public async Task Release()
     {
         try
         {
-            ChangeMouseState(false, false, 0, 0);
+            await SendMouseState(false, false, 0, 0);
         }
         catch (Exception e)
         {
@@ -170,13 +171,13 @@ class VirtualMouse
         }
     }
 
-    public void Click()
+    public async Task Click()
     {
         try
         {
-            ChangeMouseState(true, false, 0, 0);
-            Thread.Sleep(40);
-            ChangeMouseState(false, false, 0, 0);
+            await SendMouseState(true, false, 0, 0);
+            await Task.Delay(40);
+            await SendMouseState(false, false, 0, 0);
         }
         catch (Exception e)
         {
@@ -302,9 +303,9 @@ class VirtualMouse
         SubscribedHidClientsChanged?.Invoke(sender.SubscribedClients);
     }
 
-    private void ChangeMouseState(bool leftDown, bool rightDown, int mx, int my)
+    private async Task SendMouseState(bool leftDown, bool rightDown, int mx, int my)
     {
-        lock (m_lock)
+        //lock (m_lock)
         {
             if (!m_initializationFinished)
             {
@@ -326,12 +327,13 @@ class VirtualMouse
             reportValue[2] = (byte)(sbyte)my;
 
             Debug.WriteLine("Sending mouse report value notification with data: " + GetStringFromBuffer(reportValue));
-            reportValue.CopyTo(m_lastSentMouseReportValue, 0);
+            m_lastLeftDown = leftDown;
+            m_lastRightDown = rightDown;
 
             // Waiting for this operation to complete is no longer necessary since now ordering of notifications
             // is guaranteed for each client. Not waiting for it to complete reduces delays and lags.
             // Note that doing this makes us unable to know if the notification failed to be sent.
-            var asyncOp = m_hidMouseReport.NotifyValueAsync(reportValue.AsBuffer());
+            await m_hidMouseReport.NotifyValueAsync(reportValue.AsBuffer());
         }
     }
 }
