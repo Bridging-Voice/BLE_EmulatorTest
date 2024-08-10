@@ -134,7 +134,7 @@ class VirtualMouse
         UnpublishService(m_hidServiceProvider);
     }
 
-    public void MoveMouse(int mx, int my)
+    public void Move(int mx, int my)
     {
         try
         {
@@ -142,7 +142,45 @@ class VirtualMouse
         }
         catch (Exception e)
         {
-            Debug.WriteLine("Failed to change the key state due to: " + e.Message);
+            Debug.WriteLine("Failed to change the mouse state due to: " + e.Message);
+        }
+    }
+
+    public void Press()
+    {
+        try
+        {
+            ChangeMouseState(true, false, 0, 0);
+        }
+        catch (Exception e)
+        {
+            Debug.WriteLine("Failed to change the mouse state due to: " + e.Message);
+        }
+    }
+
+    public void Release()
+    {
+        try
+        {
+            ChangeMouseState(false, false, 0, 0);
+        }
+        catch (Exception e)
+        {
+            Debug.WriteLine("Failed to change the mouse state due to: " + e.Message);
+        }
+    }
+
+    public void Click()
+    {
+        try
+        {
+            ChangeMouseState(true, false, 0, 0);
+            Thread.Sleep(40);
+            ChangeMouseState(false, false, 0, 0);
+        }
+        catch (Exception e)
+        {
+            Debug.WriteLine("Failed to change the mouse state due to: " + e.Message);
         }
     }
 
@@ -282,7 +320,7 @@ class VirtualMouse
             var reportValue = new byte[c_sizeOfMouseReportDataInBytes];
 
             // The first byte of the report data is buttons bitfield.
-            reportValue[0] = (byte)((leftDown ? (1 << 7) : 0) | (rightDown ? (1 << 6) : 0));
+            reportValue[0] = (byte)((leftDown ? (1 << 0) : 0) | (rightDown ? (1 << 1) : 0));
 
             reportValue[1] = (byte)(sbyte)mx;
             reportValue[2] = (byte)(sbyte)my;

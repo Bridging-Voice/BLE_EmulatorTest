@@ -83,7 +83,7 @@ class VirtualKeyboard
         ReadProtectionLevel = GattProtectionLevel.Plain
     };
 
-    private static readonly uint c_sizeOfKeyboardReportDataInBytes = 0x8;
+    public static readonly uint c_sizeOfKeyboardReportDataInBytes = 0x8;
 
     private GattServiceProvider m_hidServiceProvider;
     private GattLocalService m_hidService;
@@ -352,5 +352,16 @@ class VirtualKeyboard
                 var asyncOp = m_hidKeyboardReport.NotifyValueAsync(reportValue.AsBuffer());
             }
         }
+    }
+
+    public void DirectSendReport(byte[] reportValue)
+    {
+        if (reportValue.Length != c_sizeOfKeyboardReportDataInBytes)
+        {
+            Console.WriteLine("wrong keyboard report size!");
+            return;
+        }
+
+        var asyncOp = m_hidKeyboardReport.NotifyValueAsync(reportValue.AsBuffer());
     }
 }
