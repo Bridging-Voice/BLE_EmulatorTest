@@ -75,13 +75,13 @@ class Program
 
         for (int i = 0; i < 10; i++)
         {
-            await m_virtualMouse.Move(-10, -10);
+            await m_virtualMouse.Move(-10, -10, 0);
             await Task.Delay(300);
         }
     
         for (int i = 0; i < 10; i++)
         {
-            await m_virtualMouse.Move(10, 10);
+            await m_virtualMouse.Move(10, 10, 0);
             await Task.Delay(300);
         }
 
@@ -145,7 +145,7 @@ class Program
                 else if (str.StartsWith("AT+BLEHIDMOUSEMOVE"))
                 {
                     var args = str.Split(new char[] { '=', '\r', '\n' })[1].Split(',');
-                    await m_virtualMouse.Move(int.Parse(args[0]), int.Parse(args[1]));
+                    await m_virtualMouse.Move(int.Parse(args[0]), int.Parse(args[1]), int.Parse(args[2]));
                     WriteString("OK\n");
                 }
                 else if (str.StartsWith("AT+BLEHIDMOUSEBUTTON"))
@@ -200,6 +200,7 @@ class Program
     {
         Console.WriteLine("Hello, World!");
         InitializeVirtualDevices();
-        Console.ReadLine();
+        //Console.ReadLine();
+        while (true) ;
     }
 }

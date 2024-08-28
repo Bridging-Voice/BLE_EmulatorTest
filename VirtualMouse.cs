@@ -32,32 +32,33 @@ class VirtualMouse
         ReadProtectionLevel = GattProtectionLevel.EncryptionRequired,                        
         StaticValue = new byte[]
         {
-            0x05, 0x01,                         // USAGE_PAGE (Generic Desktop)     0
-            0x09, 0x02,                         // USAGE (Mouse)                    2
-            0xa1, 0x01,                         // COLLECTION (Application)         4
-            0x85, 0x02,                         //   REPORT_ID (Mouse)              6
-            0x09, 0x01,                         //   USAGE (Pointer)                8
-            0xa1, 0x00,                         //   COLLECTION (Physical)          10
-            0x05, 0x09,                         //     USAGE_PAGE (Button)          12
-            0x19, 0x01,                         //     USAGE_MINIMUM (Button 1)     14
-            0x29, 0x02,                         //     USAGE_MAXIMUM (Button 2)     16
-            0x15, 0x00,                         //     LOGICAL_MINIMUM (0)          18
-            0x25, 0x01,                         //     LOGICAL_MAXIMUM (1)          20
-            0x75, 0x01,                         //     REPORT_SIZE (1)              22
-            0x95, 0x02,                         //     REPORT_COUNT (2)             24
-            0x81, 0x02,                         //     INPUT (Data,Var,Abs)         26
-            0x95, 0x06,                         //     REPORT_COUNT (6)             28
-            0x81, 0x03,                         //     INPUT (Cnst,Var,Abs)         30
-            0x05, 0x01,                         //     USAGE_PAGE (Generic Desktop) 32
-            0x09, 0x30,                         //     USAGE (X)                    34
-            0x09, 0x31,                         //     USAGE (Y)                    36
-            0x15, 0x81,                         //     LOGICAL_MINIMUM (-127)       38
-            0x25, 0x7f,                         //     LOGICAL_MAXIMUM (127)        40
-            0x75, 0x08,                         //     REPORT_SIZE (8)              42
-            0x95, 0x02,                         //     REPORT_COUNT (2)             44
-            0x81, 0x06,                         //     INPUT (Data,Var,Rel)         46
-            0xc0,                               //   END_COLLECTION                 48
-            0xc0                                // END_COLLECTION                   49/50
+            0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
+            0x09, 0x02,        // Usage (Mouse)
+            0xA1, 0x01,        // Collection (Application)
+            0x85, 0x02,        //   Report ID (2)
+            0x09, 0x01,        //   Usage (Pointer)
+            0xA1, 0x00,        //   Collection (Physical)
+            0x05, 0x09,        //     Usage Page (Button)
+            0x19, 0x01,        //     Usage Minimum (0x01)
+            0x29, 0x02,        //     Usage Maximum (0x02)
+            0x15, 0x00,        //     Logical Minimum (0)
+            0x25, 0x01,        //     Logical Maximum (1)
+            0x75, 0x01,        //     Report Size (1)
+            0x95, 0x02,        //     Report Count (2)
+            0x81, 0x02,        //     Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+            0x95, 0x06,        //     Report Count (6)
+            0x81, 0x03,        //     Input (Const,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+            0x05, 0x01,        //     Usage Page (Generic Desktop Ctrls)
+            0x09, 0x30,        //     Usage (X)
+            0x09, 0x31,        //     Usage (Y)
+            0x09, 0x38,        //     Usage (Wheel)
+            0x15, 0x81,        //     Logical Minimum (-127)
+            0x25, 0x7F,        //     Logical Maximum (127)
+            0x75, 0x08,        //     Report Size (8)
+            0x95, 0x03,        //     Report Count (3)
+            0x81, 0x06,        //     Input (Data,Var,Rel,No Wrap,Linear,Preferred State,No Null Position)
+            0xC0,              //   End Collection
+            0xC0,              // End Collection
         }.AsBuffer()
     };
 
@@ -85,7 +86,7 @@ class VirtualMouse
         ReadProtectionLevel = GattProtectionLevel.Plain
     };
 
-    private static readonly uint c_sizeOfMouseReportDataInBytes = 0x3;
+    private static readonly uint c_sizeOfMouseReportDataInBytes = 0x4;
 
     private GattServiceProvider m_hidServiceProvider;
     private GattLocalService m_hidService;
@@ -135,11 +136,11 @@ class VirtualMouse
         UnpublishService(m_hidServiceProvider);
     }
 
-    public async Task Move(int mx, int my)
+    public async Task Move(int mx, int my, int wheel)
     {
         try
         {
-            await SendMouseState(m_lastLeftDown, m_lastRightDown, mx, my);
+            await SendMouseState(m_lastLeftDown, m_lastRightDown, mx, my, wheel);
         }
         catch (Exception e)
         {
@@ -151,7 +152,7 @@ class VirtualMouse
     {
         try
         {
-            await SendMouseState(true, false, 0, 0);
+            await SendMouseState(true, false, 0, 0, 0);
         }
         catch (Exception e)
         {
@@ -163,7 +164,7 @@ class VirtualMouse
     {
         try
         {
-            await SendMouseState(false, false, 0, 0);
+            await SendMouseState(false, false, 0, 0, 0);
         }
         catch (Exception e)
         {
@@ -175,9 +176,9 @@ class VirtualMouse
     {
         try
         {
-            await SendMouseState(true, false, 0, 0);
+            await SendMouseState(true, false, 0, 0, 0);
             await Task.Delay(40);
-            await SendMouseState(false, false, 0, 0);
+            await SendMouseState(false, false, 0, 0, 0);
         }
         catch (Exception e)
         {
@@ -303,7 +304,7 @@ class VirtualMouse
         SubscribedHidClientsChanged?.Invoke(sender.SubscribedClients);
     }
 
-    private async Task SendMouseState(bool leftDown, bool rightDown, int mx, int my)
+    private async Task SendMouseState(bool leftDown, bool rightDown, int mx, int my, int wheel)
     {
         //lock (m_lock)
         {
@@ -325,6 +326,7 @@ class VirtualMouse
 
             reportValue[1] = (byte)(sbyte)mx;
             reportValue[2] = (byte)(sbyte)my;
+            reportValue[3] = (byte)(sbyte)wheel;
 
             Debug.WriteLine("Sending mouse report value notification with data: " + GetStringFromBuffer(reportValue));
             m_lastLeftDown = leftDown;
