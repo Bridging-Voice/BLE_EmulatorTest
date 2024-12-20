@@ -9,6 +9,8 @@ class Program
 {
     private static VirtualKeyboard m_virtualKeyboard;
     private static VirtualMouse m_virtualMouse;
+    private static string m_deviceName;
+    private static string VER = "BVEM 1.0.1";
 
     private static async void InitializeVirtualDevices()
     {
@@ -41,6 +43,7 @@ class Program
             {
                 var leDevice = await BluetoothLEDevice.FromIdAsync(client.Session.DeviceId.Id);
                 Console.WriteLine("keyboard-subscribed: " + leDevice.Name);
+                m_deviceName = leDevice.Name;
             }
         }
     }
@@ -53,6 +56,7 @@ class Program
             {
                 var leDevice = await BluetoothLEDevice.FromIdAsync(client.Session.DeviceId.Id);
                 Console.WriteLine("mouse-subscribed: " + leDevice.Name);
+                m_deviceName = leDevice.Name;
             }
         }
     }
@@ -99,6 +103,7 @@ class Program
 
     private static string ReadString()
     {
+        Console.WriteLine("entering ReadString");
         var len = (int)br.ReadUInt32();            // Read string length
         var str = new string(br.ReadChars(len));    // Read string
         Console.WriteLine("Read: \"{0}\"", str);
@@ -107,6 +112,7 @@ class Program
 
     private static void WriteString(string str)
     {
+        Console.WriteLine("entering WriteString");
         var buf = Encoding.ASCII.GetBytes(str);     // Get ASCII byte array     
         bw.Write((uint)buf.Length);                // Write string length
         bw.Write(buf);                              // Write string
@@ -135,22 +141,25 @@ class Program
 
             try
             {
-                var str = ReadString();
+                var str = ReadString().Replace("\n", "").Replace("\r", "");
 
-                if (str == "AT+BLECURRENTDEVICENAME\r\n")
+                if (str == "AT+BLECURRENTDEVICENAME")
                 {
-                    WriteString("at + blecurrentdevicename\n");
-                    WriteString("OK\n");
+                    WriteString(m_deviceName + "\n");
+                }
+                else if (str == "AT+VER")
+                {
+                    WriteString(VER + "\n");
                 }
                 else if (str.StartsWith("AT+BLEHIDMOUSEMOVE"))
                 {
-                    var args = str.Split(new char[] { '=', '\r', '\n' })[1].Split(',');
+                    var args = str.Split(new char[] { '=' })[1].Split(',');
                     await m_virtualMouse.Move(int.Parse(args[0]), int.Parse(args[1]), int.Parse(args[2]));
                     WriteString("OK\n");
                 }
                 else if (str.StartsWith("AT+BLEHIDMOUSEBUTTON"))
                 {
-                    var args = str.Split(new char[] { '=', '\r', '\n' })[1].Split(',');
+                    var args = str.Split(new char[] { '=' })[1].Split(',');
                     if (args[0] == "l")
                     {
                         if (args[1] == "press")
@@ -170,7 +179,7 @@ class Program
                 }
                 else if (str.StartsWith("AT+BLEKEYBOARDCODE"))
                 {
-                    var args = str.Split(new char[] { '=', '\r', '\n' })[1].Split('-');
+                    var args = str.Split(new char[] { '=' })[1].Split('-');
                     var reportValue = new byte[VirtualKeyboard.c_sizeOfKeyboardReportDataInBytes];
                     for (int i = 0; i < args.Length; i++)
                     {
