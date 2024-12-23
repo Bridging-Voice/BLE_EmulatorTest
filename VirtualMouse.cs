@@ -141,6 +141,7 @@ class VirtualMouse
         try
         {
             await SendMouseState(m_lastLeftDown, m_lastRightDown, mx, my, wheel);
+            await Task.Delay(40);
         }
         catch (Exception e)
         {

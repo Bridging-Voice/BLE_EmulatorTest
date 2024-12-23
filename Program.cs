@@ -103,7 +103,7 @@ class Program
 
     private static string ReadString()
     {
-        Console.WriteLine("entering ReadString");
+        //Console.WriteLine("entering ReadString");
         var len = (int)br.ReadUInt32();            // Read string length
         var str = new string(br.ReadChars(len));    // Read string
         Console.WriteLine("Read: \"{0}\"", str);
@@ -112,7 +112,7 @@ class Program
 
     private static void WriteString(string str)
     {
-        Console.WriteLine("entering WriteString");
+        //Console.WriteLine("entering WriteString");
         var buf = Encoding.ASCII.GetBytes(str);     // Get ASCII byte array     
         bw.Write((uint)buf.Length);                // Write string length
         bw.Write(buf);                              // Write string
