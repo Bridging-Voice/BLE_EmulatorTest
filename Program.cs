@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO.Pipes;
 using System.Text;
 using Windows.Devices.Bluetooth;
+using Windows.Devices.Input;
 
 namespace BLE_EmulatorTest;
 
@@ -16,8 +17,9 @@ class Program
     private static NamedPipeServerStream? m_pipeIn, m_pipeOut;
     private static BlockingCollection<string> m_cmds = new BlockingCollection<string>();
     private static Thread? m_readThread;
+    private static IReadOnlyList<Windows.Devices.Bluetooth.GenericAttributeProfile.GattSubscribedClient>? m_subscribedClients;
 
-    private static async Task InitializeVirtualDevices()
+    private static async Task<bool> InitializeVirtualDevices()
     {
         try
         {
@@ -30,14 +32,31 @@ class Program
             m_virtualMouse.SubscribedHidClientsChanged += VirtualMouse_SubscribedHidClientsChanged;
             await m_virtualMouse.InitilizeAsync();
             m_virtualMouse.Enable();
+
+            return true;
         }
         catch (Exception e)
         {
             Console.WriteLine("Error: " + e.ToString());
+            m_deviceName = "BLE_ERROR";
+            WriteString("DEVICE=" + m_deviceName + "\n");
+            return false;
         }
+    }
 
-        //await Test();
-        await run_server();
+    private static void DeviceConnectionStatusChange(BluetoothLEDevice sender, object args)
+    {
+        Console.WriteLine("DeviceConnectionStatusChange - device: " + sender.Name + "  status: " + sender.ConnectionStatus);
+        if (sender.ConnectionStatus == BluetoothConnectionStatus.Connected)
+        {
+            m_deviceName = sender.Name;
+            WriteString("DEVICE=" + m_deviceName + "\n");
+        }
+        else if (sender.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
+        {
+            m_deviceName = "NONE";
+            WriteString("DEVICE=" + m_deviceName + "\n");
+        }
     }
 
     private static async void VirtualKeyboard_SubscribedHidClientsChanged(IReadOnlyList<Windows.Devices.Bluetooth.GenericAttributeProfile.GattSubscribedClient> subscribedClients)
@@ -48,60 +67,24 @@ class Program
             {
                 var leDevice = await BluetoothLEDevice.FromIdAsync(client.Session.DeviceId.Id);
                 Console.WriteLine("keyboard-subscribed: " + leDevice.Name);
-                m_deviceName = leDevice.Name;
-                WriteString("DEVICE=" + m_deviceName + "\n");
             }
         }
     }
 
+    // this one we'll use to actually track connect/disconnect
     private static async void VirtualMouse_SubscribedHidClientsChanged(IReadOnlyList<Windows.Devices.Bluetooth.GenericAttributeProfile.GattSubscribedClient> subscribedClients)
     {
+        m_subscribedClients = subscribedClients;
         if (subscribedClients != null)
         {
             foreach (var client in subscribedClients)
             {
                 var leDevice = await BluetoothLEDevice.FromIdAsync(client.Session.DeviceId.Id);
+                leDevice.ConnectionStatusChanged += DeviceConnectionStatusChange;
                 Console.WriteLine("mouse-subscribed: " + leDevice.Name);
                 m_deviceName = leDevice.Name;
                 WriteString("DEVICE=" + m_deviceName + "\n");
             }
-        }
-    }
-
-    private static async Task Test()
-    {
-        await Task.Delay(1000);
-
-        for (int i = 0; i < 10; i++)
-        {
-            await m_virtualKeyboard.PressKey(0x05);
-            await Task.Delay(100);
-            await m_virtualKeyboard.ReleaseKey(0x05);
-            await Task.Delay(100);
-            await m_virtualKeyboard.PressKey(0x1e);
-            await Task.Delay(100);
-            await m_virtualKeyboard.ReleaseKey(0x1e);
-            await Task.Delay(100);
-        }
-
-        for (int i = 0; i < 10; i++)
-        {
-            await m_virtualMouse.Move(-10, -10, 0);
-            await Task.Delay(300);
-        }
-    
-        for (int i = 0; i < 10; i++)
-        {
-            await m_virtualMouse.Move(10, 10, 0);
-            await Task.Delay(300);
-        }
-
-        for (int i = 0; i < 4; i++)
-        {
-            await m_virtualMouse.Press();
-            await Task.Delay(300);
-            await m_virtualMouse.Release();
-            await Task.Delay(300);
         }
     }
 
@@ -144,23 +127,8 @@ class Program
         m_readThread = new Thread(ReadStrings);
         m_readThread.Start();
 
-        // Open the named pipe.
-        bool waitingForConnection = true;
-
         while (true)
         {
-            if (waitingForConnection)
-            {
-                Console.WriteLine("Waiting for connection...");
-                m_pipeIn = new NamedPipeServerStream("BV_BLE_PIPE_IN", PipeDirection.InOut, 1, PipeTransmissionMode.Message, PipeOptions.WriteThrough, 0, 0);
-                m_pipeOut = new NamedPipeServerStream("BV_BLE_PIPE_OUT", PipeDirection.InOut, 1, PipeTransmissionMode.Message, PipeOptions.WriteThrough, 0, 0);
-                m_pipeIn.WaitForConnection();
-                m_pipeOut.WaitForConnection();
-
-                Console.WriteLine("Connected.");
-                waitingForConnection = false;
-            }
-
             try
             {
                 var str = m_cmds.Take().Replace("\n", "").Replace("\r", "").TrimEnd('\0').ToLower();
@@ -236,14 +204,32 @@ class Program
                     m_pipeOut.Dispose();
                     m_pipeOut = null;
                 }
-                waitingForConnection = true;
+                break;
             }
         }
     }
 
+    static void CreatePipes()
+    {
+        Console.WriteLine("Waiting for pipe connection...");
+        m_pipeIn = new NamedPipeServerStream("BV_BLE_PIPE_IN", PipeDirection.InOut, 1, PipeTransmissionMode.Message, PipeOptions.WriteThrough, 0, 0);
+        m_pipeOut = new NamedPipeServerStream("BV_BLE_PIPE_OUT", PipeDirection.InOut, 1, PipeTransmissionMode.Message, PipeOptions.WriteThrough, 0, 0);
+        m_pipeIn.WaitForConnection();
+        m_pipeOut.WaitForConnection();
+
+        Console.WriteLine("Pipes Connected!");
+    }
+
     static async Task Main(string[] args)
     {
-        Console.WriteLine("Hello, World!");
-        await InitializeVirtualDevices();
+        Console.WriteLine("boot");
+        CreatePipes();
+
+        if (await InitializeVirtualDevices())
+            await run_server();
+        else
+            WriteString("DEVICE=BLE_ERROR\n");
+
+        Thread.Sleep(Timeout.Infinite);
     }
 }
