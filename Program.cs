@@ -5,6 +5,7 @@ using System.IO.Pipes;
 using System.Text;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Input;
+using Windows.Devices.Radios;
 
 namespace BLE_EmulatorTest;
 
@@ -13,7 +14,7 @@ class Program
     private static VirtualKeyboard? m_virtualKeyboard;
     private static VirtualMouse? m_virtualMouse;
     private static string m_deviceName = "NONE";
-    private static string VER = "BVEM 1.0.1";
+    private static string VER = "8.1b";
     private static NamedPipeServerStream? m_pipeIn, m_pipeOut;
     private static BlockingCollection<string> m_cmds = new BlockingCollection<string>();
     private static Thread? m_readThread;
@@ -136,7 +137,7 @@ class Program
 
                 if (str.StartsWith("begin"))
                 {
-                    WriteString(VER + "\n");
+                    WriteString("VER=" + VER + "\n");
                     WriteString("DEVICE=" + m_deviceName + "\n");
                 }
                 else if (str.StartsWith("ping"))
@@ -220,12 +221,29 @@ class Program
         Console.WriteLine("Pipes Connected!");
     }
 
+    private static void BluetoothRadio_StateChanged(Radio sender, object args)
+    {
+        if (sender.State != RadioState.On)
+            WriteString("DEVICE=BLE_ERROR\n");
+    }
+
+    static async Task<bool> GetBluetoothIsEnabled()
+    {
+        var radios = await Radio.GetRadiosAsync();
+        var bluetoothRadio = radios.FirstOrDefault(radio => radio.Kind == RadioKind.Bluetooth);
+
+        if (bluetoothRadio != null)
+            bluetoothRadio.StateChanged += BluetoothRadio_StateChanged;
+
+        return bluetoothRadio != null && bluetoothRadio.State == RadioState.On;
+    }
+
     static async Task Main(string[] args)
     {
         Console.WriteLine("boot");
         CreatePipes();
 
-        if (await InitializeVirtualDevices())
+        if (await GetBluetoothIsEnabled() && await InitializeVirtualDevices())
             await run_server();
         else
             WriteString("DEVICE=BLE_ERROR\n");
