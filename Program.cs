@@ -14,7 +14,7 @@ class Program
 {
     private static VirtualKeyboard? m_virtualKeyboard;
     private static VirtualMouse? m_virtualMouse;
-    private static string VER = "8.1b";
+    private static string VER = "8.1c";
     private static BlockingCollection<string> m_cmds = new BlockingCollection<string>();
     private static IReadOnlyList<Windows.Devices.Bluetooth.GenericAttributeProfile.GattSubscribedClient>? m_subscribedClients;
     private static unsafe delegate* unmanaged<sbyte*, void> m_sendStringCallback;
@@ -97,7 +97,7 @@ class Program
     [UnmanagedCallersOnly(EntryPoint = "AddCmd")]
     public static unsafe void AddCmd(sbyte* _cmd)
     {
-        string cmd = Marshal.PtrToStringAnsi((IntPtr)_cmd);
+        string cmd = Marshal.PtrToStringUTF8((IntPtr)_cmd);
         m_cmds.Add(cmd);
         LogDebug($"AddCmd: \"{cmd}\"");
     }
@@ -106,14 +106,16 @@ class Program
     {
         if (m_sendStringCallback is not null)
         {
-            IntPtr utf8String = Marshal.StringToHGlobalAnsi(str);
+            byte[] utf8Bytes = Encoding.UTF8.GetBytes(str + "\0");
+            IntPtr hGlobal = Marshal.AllocHGlobal(utf8Bytes.Length);
+            Marshal.Copy(utf8Bytes, 0, hGlobal, utf8Bytes.Length);
             try
             {
-                m_sendStringCallback((sbyte*)utf8String);
+                m_sendStringCallback((sbyte*)hGlobal);
             }
             finally
             {
-                Marshal.FreeHGlobal(utf8String);
+                Marshal.FreeHGlobal(hGlobal);
             }
         }
         LogDebug($"Wrote: \"{str}\"");
