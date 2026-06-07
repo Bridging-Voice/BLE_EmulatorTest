@@ -6,6 +6,7 @@ using System.Text;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Input;
 using Windows.Devices.Radios;
+using System.Runtime.InteropServices;
 
 namespace BLE_EmulatorTest;
 
@@ -13,12 +14,19 @@ class Program
 {
     private static VirtualKeyboard? m_virtualKeyboard;
     private static VirtualMouse? m_virtualMouse;
-    private static string m_deviceName = "NONE";
     private static string VER = "8.1b";
-    private static NamedPipeServerStream? m_pipeIn, m_pipeOut;
     private static BlockingCollection<string> m_cmds = new BlockingCollection<string>();
-    private static Thread? m_readThread;
     private static IReadOnlyList<Windows.Devices.Bluetooth.GenericAttributeProfile.GattSubscribedClient>? m_subscribedClients;
+    private static unsafe delegate* unmanaged<sbyte*, void> m_sendStringCallback;
+
+    public static void Log(string message)
+    {
+        Console.WriteLine($"EMULATOR> {message}");
+    }
+
+    public static void LogInfo(string message) { Log(message); }
+    public static void LogDebug(string message) { /*Log(message);*/ }
+
 
     private static async Task<bool> InitializeVirtualDevices()
     {
@@ -34,29 +42,27 @@ class Program
             await m_virtualMouse.InitilizeAsync();
             m_virtualMouse.Enable();
 
+            LogInfo("InitializeVirtualDevices - finished!");
             return true;
         }
         catch (Exception e)
         {
-            Console.WriteLine("Error: " + e.ToString());
-            m_deviceName = "BLE_ERROR";
-            WriteString("DEVICE=" + m_deviceName + "\n");
+            LogInfo($"Error: {e.ToString()}");
+            SendString("DEVICE=BLE_ERROR\n");
             return false;
         }
     }
 
     private static void DeviceConnectionStatusChange(BluetoothLEDevice sender, object args)
     {
-        Console.WriteLine("DeviceConnectionStatusChange - device: " + sender.Name + "  status: " + sender.ConnectionStatus);
+        LogInfo($"DeviceConnectionStatusChange - device: {sender.Name}  status: {sender.ConnectionStatus}");
         if (sender.ConnectionStatus == BluetoothConnectionStatus.Connected)
         {
-            m_deviceName = sender.Name;
-            WriteString("DEVICE=" + m_deviceName + "\n");
+            SendString($"DEVICE={sender.Name}\n");
         }
         else if (sender.ConnectionStatus == BluetoothConnectionStatus.Disconnected)
         {
-            m_deviceName = "NONE";
-            WriteString("DEVICE=" + m_deviceName + "\n");
+            SendString("DEVICE=NONE\n");
         }
     }
 
@@ -67,7 +73,7 @@ class Program
             foreach (var client in subscribedClients)
             {
                 var leDevice = await BluetoothLEDevice.FromIdAsync(client.Session.DeviceId.Id);
-                Console.WriteLine("keyboard-subscribed: " + leDevice.Name);
+                LogInfo("keyboard-subscribed: " + leDevice.Name);
             }
         }
     }
@@ -82,149 +88,119 @@ class Program
             {
                 var leDevice = await BluetoothLEDevice.FromIdAsync(client.Session.DeviceId.Id);
                 leDevice.ConnectionStatusChanged += DeviceConnectionStatusChange;
-                Console.WriteLine("mouse-subscribed: " + leDevice.Name);
-                m_deviceName = leDevice.Name;
-                WriteString("DEVICE=" + m_deviceName + "\n");
+                LogInfo("mouse-subscribed: " + leDevice.Name);
+                SendString($"DEVICE={leDevice.Name}\n");
             }
         }
     }
 
-    private static void ReadStrings()
+    [UnmanagedCallersOnly(EntryPoint = "AddCmd")]
+    public static unsafe void AddCmd(sbyte* _cmd)
     {
-        while (true)
+        string cmd = Marshal.PtrToStringAnsi((IntPtr)_cmd);
+        m_cmds.Add(cmd);
+        LogDebug($"AddCmd: \"{cmd}\"");
+    }
+
+    private static unsafe void SendString(string str)
+    {
+        if (m_sendStringCallback is not null)
         {
+            IntPtr utf8String = Marshal.StringToHGlobalAnsi(str);
             try
             {
-                if (m_pipeIn is null || !m_pipeIn.IsConnected)
-                {
-                    Thread.Sleep(500);
-                }
-                else
-                {
-                    byte[] buf = new byte[128];
-                    m_pipeIn.Read(buf, 0, buf.Length);
-                    var str = System.Text.Encoding.ASCII.GetString(buf);
-                    m_cmds.Add(str);
-                    Console.WriteLine("Read: \"{0}\"", str);
-                }
+                m_sendStringCallback((sbyte*)utf8String);
             }
-            catch { Thread.Sleep(500); }
+            finally
+            {
+                Marshal.FreeHGlobal(utf8String);
+            }
         }
-    }
-
-    private static void WriteString(string str)
-    {
-        //Console.WriteLine("entering WriteString");
-        var buf = Encoding.ASCII.GetBytes(str);     // Get ASCII byte array
-        if (m_pipeOut is not null && m_pipeOut.IsConnected)
-        {
-            m_pipeOut.Write(buf);
-        }
-        Console.WriteLine("Wrote: \"{0}\"", str);
+        LogDebug($"Wrote: \"{str}\"");
     }
 
     private static async Task run_server()
     {
-        m_readThread = new Thread(ReadStrings);
-        m_readThread.Start();
+        if (!await GetBluetoothIsEnabled() || !await InitializeVirtualDevices())
+        {
+            SendString("DEVICE=BLE_ERROR\n");
+            LogInfo("exiting run_server");
+            return;
+        }
 
         while (true)
         {
-            try
-            {
-                var str = m_cmds.Take().Replace("\n", "").Replace("\r", "").TrimEnd('\0').ToLower();
-                WriteString("\x06\n"); // ACK when we get to actually processing it
+            LogDebug("checking cmd queue...");
 
-                if (str.StartsWith("begin"))
-                {
-                    WriteString("VER=" + VER + "\n");
-                    WriteString("DEVICE=" + m_deviceName + "\n");
-                }
-                else if (str.StartsWith("ping"))
-                {
-                    WriteString("pong\n");
-                }
-                else if (str.StartsWith("mv"))
-                {
-                    var args = str.Split(new char[] { '=' })[1].Split(',');
-                    await m_virtualMouse.Move(int.Parse(args[0]), int.Parse(args[1]), 0);
-                    WriteString("OK\n");
-                }
-                else if (str.StartsWith("mw"))
-                {
-                    var args = str.Split(new char[] { '=' })[1].Split(',');
-                    await m_virtualMouse.Move(0, 0, int.Parse(args[0]));
-                    WriteString("OK\n");
-                }
-                else if (str.StartsWith("mb"))
-                {
-                    var args = str.Split(new char[] { '=' })[1].Split(',');
-                    if (args[0] == "l")
-                    {
-                        if (args[1] == "1")
-                        {
-                            await m_virtualMouse.Press();
-                        }
-                        else if (args[1] == "0")
-                        {
-                            await m_virtualMouse.Release();
-                        }
-                    }
-                    WriteString("OK\n");
-                }
-                else if (str.StartsWith("kb"))
-                {
-                    var args = str.Split(new char[] { '=' })[1].Split('-');
-                    var reportValue = new byte[VirtualKeyboard.c_sizeOfKeyboardReportDataInBytes];
-                    for (int i = 0; i < args.Length; i++)
-                    {
-                        reportValue[i] = byte.Parse(args[i], NumberStyles.HexNumber);
-                    }
-                    await m_virtualKeyboard.DirectSendReport(reportValue);
-                    WriteString("OK\n");
-                }
-                else
-                {
-                    Console.WriteLine("UNKNOWN CMD!!!");
-                    WriteString("ERROR=unknown cmd\n");
-                }
-            }
-            // When client disconnects
-            catch (System.IO.IOException)
+            /*
+            string? str;
+            var found = m_cmds.TryTake(out str, 1000);
+            if (!found)
+                continue;
+            */
+            var str = m_cmds.Take();
+            str = str.Replace("\n", "").Replace("\r", "").TrimEnd('\0').ToLower();
+            LogDebug("got cmd: " + str);
+            SendString("\x06\n"); // ACK when we get to actually processing it
+
+            if (str.StartsWith("ping"))
             {
-                Console.WriteLine("Client disconnected.");
-                if (m_pipeIn is not null)
+                SendString("pong\n");
+            }
+            else if (str.StartsWith("mv"))
+            {
+                var args = str.Split(new char[] { '=' })[1].Split(',');
+                await m_virtualMouse.Move(int.Parse(args[0]), int.Parse(args[1]), 0);
+                SendString("OK\n");
+            }
+            else if (str.StartsWith("mw"))
+            {
+                var args = str.Split(new char[] { '=' })[1].Split(',');
+                await m_virtualMouse.Move(0, 0, int.Parse(args[0]));
+                SendString("OK\n");
+            }
+            else if (str.StartsWith("mb"))
+            {
+                var args = str.Split(new char[] { '=' })[1].Split(',');
+                if (args[0] == "l")
                 {
-                    m_pipeIn.Close();
-                    m_pipeIn.Dispose();
-                    m_pipeIn = null;
+                    if (args[1] == "1")
+                    {
+                        await m_virtualMouse.Press();
+                    }
+                    else if (args[1] == "0")
+                    {
+                        await m_virtualMouse.Release();
+                    }
                 }
-                if (m_pipeOut is not null)
+                SendString("OK\n");
+            }
+            else if (str.StartsWith("kb"))
+            {
+                var args = str.Split(new char[] { '=' })[1].Split('-');
+                var reportValue = new byte[VirtualKeyboard.c_sizeOfKeyboardReportDataInBytes];
+                for (int i = 0; i < args.Length; i++)
                 {
-                    m_pipeOut.Close();
-                    m_pipeOut.Dispose();
-                    m_pipeOut = null;
+                    reportValue[i] = byte.Parse(args[i], NumberStyles.HexNumber);
                 }
-                break;
+                await m_virtualKeyboard.DirectSendReport(reportValue);
+                SendString("OK\n");
+            }
+            else
+            {
+                LogDebug("UNKNOWN CMD!!!");
+                SendString("ERROR=unknown cmd\n");
             }
         }
-    }
-
-    static void CreatePipes()
-    {
-        Console.WriteLine("Waiting for pipe connection...");
-        m_pipeIn = new NamedPipeServerStream("BV_BLE_PIPE_IN", PipeDirection.InOut, 1, PipeTransmissionMode.Message, PipeOptions.WriteThrough, 0, 0);
-        m_pipeOut = new NamedPipeServerStream("BV_BLE_PIPE_OUT", PipeDirection.InOut, 1, PipeTransmissionMode.Message, PipeOptions.WriteThrough, 0, 0);
-        m_pipeIn.WaitForConnection();
-        m_pipeOut.WaitForConnection();
-
-        Console.WriteLine("Pipes Connected!");
     }
 
     private static void BluetoothRadio_StateChanged(Radio sender, object args)
     {
         if (sender.State != RadioState.On)
-            WriteString("DEVICE=BLE_ERROR\n");
+        {
+            LogInfo("Bluetooth turned OFF");
+            SendString("DEVICE=BLE_ERROR\n");
+        }
     }
 
     static async Task<bool> GetBluetoothIsEnabled()
@@ -235,19 +211,18 @@ class Program
         if (bluetoothRadio != null)
             bluetoothRadio.StateChanged += BluetoothRadio_StateChanged;
 
-        return bluetoothRadio != null && bluetoothRadio.State == RadioState.On;
+        var retval = bluetoothRadio != null && bluetoothRadio.State == RadioState.On;
+        LogInfo("GetBluetoothIsEnabled - " + retval);
+        return retval;
     }
 
-    static async Task Main(string[] args)
+    [UnmanagedCallersOnly(EntryPoint = "Start")]
+    public static unsafe void Start(delegate* unmanaged<sbyte*, void> sendStringCallback)
     {
-        Console.WriteLine("boot");
-        CreatePipes();
-
-        if (await GetBluetoothIsEnabled() && await InitializeVirtualDevices())
-            await run_server();
-        else
-            WriteString("DEVICE=BLE_ERROR\n");
-
-        Thread.Sleep(Timeout.Infinite);
+        m_sendStringCallback = sendStringCallback;
+        SendString("VER=" + VER + "\n");
+        SendString("DEVICE=NONE\n");
+        run_server().GetAwaiter().GetResult();
+        LogInfo("Start - finished!");
     }
 }

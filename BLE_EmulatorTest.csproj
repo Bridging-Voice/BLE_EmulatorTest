@@ -1,11 +1,15 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Library</OutputType>
     <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>bv_dongle_emulator</AssemblyName>
+    
+	  <PublishAot>true</PublishAot>
+	  <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+	  
   </PropertyGroup>
 
 </Project>
