@@ -16,7 +16,7 @@ class VirtualKeyboard
 
     private static readonly uint c_hidReportReferenceDescriptorShortUuid = 0x2908;
 
-    private static readonly GattLocalDescriptorParameters c_hidKeyboardReportReferenceParameters = new GattLocalDescriptorParameters
+    private static readonly GattLocalDescriptorParameters c_hidReportReferenceParameters = new GattLocalDescriptorParameters
     {
         ReadProtectionLevel = GattProtectionLevel.EncryptionRequired,
         StaticValue = new byte[]
@@ -83,12 +83,12 @@ class VirtualKeyboard
         ReadProtectionLevel = GattProtectionLevel.Plain
     };
 
-    public static readonly uint c_sizeOfKeyboardReportDataInBytes = 0x8;
+    public static readonly uint c_sizeOfReportDataInBytes = 0x8;
 
     private GattServiceProvider m_hidServiceProvider;
     private GattLocalService m_hidService;
-    private GattLocalCharacteristic m_hidKeyboardReport;
-    private GattLocalDescriptor m_hidKeyboardReportReference;
+    private GattLocalCharacteristic m_hidReport;
+    private GattLocalDescriptor m_hidReportReference;
     private GattLocalCharacteristic m_hidReportMap;
     private GattLocalCharacteristic m_hidInformation;
     private GattLocalCharacteristic m_hidControlPoint;
@@ -99,7 +99,7 @@ class VirtualKeyboard
 
     private HashSet<byte> m_currentlyDepressedModifierKeys = new HashSet<byte>();
     private HashSet<byte> m_currentlyDepressedKeys = new HashSet<byte>();
-    private byte[] m_lastSentKeyboardReportValue = new byte[c_sizeOfKeyboardReportDataInBytes];
+    private byte[] m_lastSentReportValue = new byte[c_sizeOfReportDataInBytes];
 
     public delegate void SubscribedHidClientsChangedHandler(IReadOnlyList<GattSubscribedClient> subscribedClients);
     public event SubscribedHidClientsChangedHandler SubscribedHidClientsChanged;
@@ -170,24 +170,24 @@ class VirtualKeyboard
         m_hidServiceProvider = hidServiceProviderCreationResult.ServiceProvider;
         m_hidService = m_hidServiceProvider.Service;
 
-        // HID keyboard Report characteristic.
-        var hidKeyboardReportCharacteristicCreationResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.Report, c_hidInputReportParameters);
-        if (hidKeyboardReportCharacteristicCreationResult.Error != BluetoothError.Success)
+        // HID Report characteristic.
+        var hidReportCharacteristicCreationResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.Report, c_hidInputReportParameters);
+        if (hidReportCharacteristicCreationResult.Error != BluetoothError.Success)
         {
-            Debug.WriteLine("Failed to create the keyboard report characteristic: " + hidKeyboardReportCharacteristicCreationResult.Error);
-            throw new Exception("Failed to create the keyboard report characteristic: " + hidKeyboardReportCharacteristicCreationResult.Error);
+            Debug.WriteLine("Failed to create the keyboard report characteristic: " + hidReportCharacteristicCreationResult.Error);
+            throw new Exception("Failed to create the keyboard report characteristic: " + hidReportCharacteristicCreationResult.Error);
         }
-        m_hidKeyboardReport = hidKeyboardReportCharacteristicCreationResult.Characteristic;
-        m_hidKeyboardReport.SubscribedClientsChanged += HidKeyboardReport_SubscribedClientsChanged;
+        m_hidReport = hidReportCharacteristicCreationResult.Characteristic;
+        m_hidReport.SubscribedClientsChanged += SubscribedClientsChanged;
 
-        // HID keyboard Report Reference descriptor.
-        var hidKeyboardReportReferenceCreationResult = await m_hidKeyboardReport.CreateDescriptorAsync(BluetoothUuidHelper.FromShortId(c_hidReportReferenceDescriptorShortUuid), c_hidKeyboardReportReferenceParameters);
-        if (hidKeyboardReportReferenceCreationResult.Error != BluetoothError.Success)
+        // HID Report Reference descriptor.
+        var hidReportReferenceCreationResult = await m_hidReport.CreateDescriptorAsync(BluetoothUuidHelper.FromShortId(c_hidReportReferenceDescriptorShortUuid), c_hidReportReferenceParameters);
+        if (hidReportReferenceCreationResult.Error != BluetoothError.Success)
         {
-            Debug.WriteLine("Failed to create the keyboard report reference descriptor: " + hidKeyboardReportReferenceCreationResult.Error);
-            throw new Exception("Failed to create the keyboard report reference descriptor: " + hidKeyboardReportReferenceCreationResult.Error);
+            Debug.WriteLine("Failed to create the keyboard report reference descriptor: " + hidReportReferenceCreationResult.Error);
+            throw new Exception("Failed to create the keyboard report reference descriptor: " + hidReportReferenceCreationResult.Error);
         }
-        m_hidKeyboardReportReference = hidKeyboardReportReferenceCreationResult.Descriptor;
+        m_hidReportReference = hidReportReferenceCreationResult.Descriptor;
 
         // HID Report Map characteristic.
         var hidReportMapCharacteristicCreationResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.ReportMap, c_hidReportMapParameters);
@@ -270,7 +270,7 @@ class VirtualKeyboard
         Debug.WriteLine("HID advertisement status changed to " + args.Status);
     }
 
-    private void HidKeyboardReport_SubscribedClientsChanged(GattLocalCharacteristic sender, object args)
+    private void SubscribedClientsChanged(GattLocalCharacteristic sender, object args)
     {
         Debug.WriteLine("Number of clients now registered for keyboard notifications: " + sender.SubscribedClients.Count);
         SubscribedHidClientsChanged?.Invoke(sender.SubscribedClients);
@@ -312,13 +312,13 @@ class VirtualKeyboard
                 }
             }
 
-            if (m_hidKeyboardReport.SubscribedClients.Count == 0)
+            if (m_hidReport.SubscribedClients.Count == 0)
             {
                 Debug.WriteLine("No clients are currently subscribed to the keyboard report.");
                 return;
             }
 
-            var reportValue = new byte[c_sizeOfKeyboardReportDataInBytes];
+            var reportValue = new byte[c_sizeOfReportDataInBytes];
 
             // The first byte of the report data is a modifier key bitfield.
             reportValue[0] = 0x0;
@@ -341,27 +341,27 @@ class VirtualKeyboard
                 reportIndex++;
             }
 
-            //if (!reportValue.SequenceEqual(m_lastSentKeyboardReportValue))
+            //if (!reportValue.SequenceEqual(m_lastSentReportValue))
             {
                 Debug.WriteLine("Sending keyboard report value notification with data: " + GetStringFromBuffer(reportValue));
-                reportValue.CopyTo(m_lastSentKeyboardReportValue, 0);
+                reportValue.CopyTo(m_lastSentReportValue, 0);
 
                 // Waiting for this operation to complete is no longer necessary since now ordering of notifications
                 // is guaranteed for each client. Not waiting for it to complete reduces delays and lags.
                 // Note that doing this makes us unable to know if the notification failed to be sent.
-                await m_hidKeyboardReport.NotifyValueAsync(reportValue.AsBuffer());
+                await m_hidReport.NotifyValueAsync(reportValue.AsBuffer());
             }
         }
     }
 
     public async Task DirectSendReport(byte[] reportValue)
     {
-        if (reportValue.Length != c_sizeOfKeyboardReportDataInBytes)
+        if (reportValue.Length != c_sizeOfReportDataInBytes)
         {
             Console.WriteLine("wrong keyboard report size!");
             return;
         }
 
-        await m_hidKeyboardReport.NotifyValueAsync(reportValue.AsBuffer());
+        await m_hidReport.NotifyValueAsync(reportValue.AsBuffer());
     }
 }

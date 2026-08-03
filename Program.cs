@@ -13,8 +13,9 @@ namespace BLE_EmulatorTest;
 class Program
 {
     private static VirtualKeyboard? m_virtualKeyboard;
+    private static VirtualConsumer? m_virtualConsumer;
     private static VirtualMouse? m_virtualMouse;
-    private static string VER = "8.1c";
+    private static string VER = "9.0";
     private static BlockingCollection<string> m_cmds = new BlockingCollection<string>();
     private static IReadOnlyList<Windows.Devices.Bluetooth.GenericAttributeProfile.GattSubscribedClient>? m_subscribedClients;
     private static unsafe delegate* unmanaged<sbyte*, void> m_sendStringCallback;
@@ -36,6 +37,11 @@ class Program
             m_virtualKeyboard.SubscribedHidClientsChanged += VirtualKeyboard_SubscribedHidClientsChanged;
             await m_virtualKeyboard.InitilizeAsync();
             m_virtualKeyboard.Enable();
+
+            m_virtualConsumer = new VirtualConsumer();
+            m_virtualConsumer.SubscribedHidClientsChanged += VirtualConsumer_SubscribedHidClientsChanged;
+            await m_virtualConsumer.InitilizeAsync();
+            m_virtualConsumer.Enable();
 
             m_virtualMouse = new VirtualMouse();
             m_virtualMouse.SubscribedHidClientsChanged += VirtualMouse_SubscribedHidClientsChanged;
@@ -74,6 +80,18 @@ class Program
             {
                 var leDevice = await BluetoothLEDevice.FromIdAsync(client.Session.DeviceId.Id);
                 LogInfo("keyboard-subscribed: " + leDevice.Name);
+            }
+        }
+    }
+
+    private static async void VirtualConsumer_SubscribedHidClientsChanged(IReadOnlyList<Windows.Devices.Bluetooth.GenericAttributeProfile.GattSubscribedClient> subscribedClients)
+    {
+        if (subscribedClients != null)
+        {
+            foreach (var client in subscribedClients)
+            {
+                var leDevice = await BluetoothLEDevice.FromIdAsync(client.Session.DeviceId.Id);
+                LogInfo("consumer-subscribed: " + leDevice.Name);
             }
         }
     }
@@ -180,12 +198,26 @@ class Program
             else if (str.StartsWith("kb"))
             {
                 var args = str.Split(new char[] { '=' })[1].Split('-');
-                var reportValue = new byte[VirtualKeyboard.c_sizeOfKeyboardReportDataInBytes];
+                var reportValue = new byte[VirtualKeyboard.c_sizeOfReportDataInBytes];
                 for (int i = 0; i < args.Length; i++)
                 {
                     reportValue[i] = byte.Parse(args[i], NumberStyles.HexNumber);
                 }
                 await m_virtualKeyboard.DirectSendReport(reportValue);
+                SendString("OK\n");
+            }
+            else if (str.StartsWith("cr"))
+            {
+                var arg = str.Split(new char[] { '=' })[1];
+                var val = byte.Parse(arg, NumberStyles.HexNumber);
+                var reportValue = new byte[VirtualConsumer.c_sizeOfReportDataInBytes];
+
+                reportValue[0] = (byte)(val & 0xFF);
+                reportValue[1] = (byte)(val >> 8);
+
+                LogInfo($"ConsumerReport: {reportValue[0]:X},{reportValue[1]:X}");
+
+                await m_virtualConsumer.DirectSendReport(reportValue);
                 SendString("OK\n");
             }
             else
