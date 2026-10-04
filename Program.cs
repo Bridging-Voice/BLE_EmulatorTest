@@ -15,7 +15,7 @@ class Program
     private static VirtualKeyboard? m_virtualKeyboard;
     private static VirtualConsumer? m_virtualConsumer;
     private static VirtualMouse? m_virtualMouse;
-    private static string VER = "10.0";
+    private static string VER = "11.0";
     private static BlockingCollection<string> m_cmds = new BlockingCollection<string>();
     private static IReadOnlyList<Windows.Devices.Bluetooth.GenericAttributeProfile.GattSubscribedClient>? m_subscribedClients;
     private static unsafe delegate* unmanaged<sbyte*, void> m_sendStringCallback;
