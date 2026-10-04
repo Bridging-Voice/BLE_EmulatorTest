@@ -52,9 +52,9 @@ class VirtualMouse
             0x09, 0x30,        //     Usage (X)
             0x09, 0x31,        //     Usage (Y)
             0x09, 0x38,        //     Usage (Wheel)
-            0x15, 0x81,        //     Logical Minimum (-127)
-            0x25, 0x7F,        //     Logical Maximum (127)
-            0x75, 0x08,        //     Report Size (8)
+            0x16, 0x01, 0x80,  //     Logical Minimum (-32767)
+            0x26, 0xFF, 0x7F,  //     Logical Maximum (32767)
+            0x75, 0x10,        //     Report Size (16)
             0x95, 0x03,        //     Report Count (3)
             0x81, 0x06,        //     Input (Data,Var,Rel,No Wrap,Linear,Preferred State,No Null Position)
             0xC0,              //   End Collection
@@ -86,7 +86,7 @@ class VirtualMouse
         ReadProtectionLevel = GattProtectionLevel.Plain
     };
 
-    private static readonly uint c_sizeOfReportDataInBytes = 0x4;
+    private static readonly uint c_sizeOfReportDataInBytes = 0x7;
 
     private GattServiceProvider m_hidServiceProvider;
     private GattLocalService m_hidService;
@@ -136,7 +136,7 @@ class VirtualMouse
         UnpublishService(m_hidServiceProvider);
     }
 
-    public async Task Move(int mx, int my, int wheel)
+    public async Task Move(short mx, short my, short wheel)
     {
         try
         {
@@ -305,7 +305,7 @@ class VirtualMouse
         SubscribedHidClientsChanged?.Invoke(sender.SubscribedClients);
     }
 
-    private async Task SendMouseState(bool leftDown, bool rightDown, int mx, int my, int wheel)
+    private async Task SendMouseState(bool leftDown, bool rightDown, short mx, short my, short wheel)
     {
         //lock (m_lock)
         {
@@ -325,9 +325,14 @@ class VirtualMouse
             // The first byte of the report data is buttons bitfield.
             reportValue[0] = (byte)((leftDown ? (1 << 0) : 0) | (rightDown ? (1 << 1) : 0));
 
-            reportValue[1] = (byte)(sbyte)mx;
-            reportValue[2] = (byte)(sbyte)my;
-            reportValue[3] = (byte)(sbyte)wheel;
+            reportValue[1] = (byte)(mx & 0xFF);
+            reportValue[2] = (byte)((mx >> 8) & 0xFF);
+
+            reportValue[3] = (byte)(my & 0xFF);
+            reportValue[4] = (byte)((my >> 8) & 0xFF);
+            
+            reportValue[5] = (byte)(wheel & 0xFF);
+            reportValue[6] = (byte)((wheel >> 8) & 0xFF);
 
             Debug.WriteLine("Sending mouse report value notification with data: " + GetStringFromBuffer(reportValue));
             m_lastLeftDown = leftDown;

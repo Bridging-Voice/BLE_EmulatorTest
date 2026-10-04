@@ -15,7 +15,7 @@ class Program
     private static VirtualKeyboard? m_virtualKeyboard;
     private static VirtualConsumer? m_virtualConsumer;
     private static VirtualMouse? m_virtualMouse;
-    private static string VER = "9.1";
+    private static string VER = "10.0";
     private static BlockingCollection<string> m_cmds = new BlockingCollection<string>();
     private static IReadOnlyList<Windows.Devices.Bluetooth.GenericAttributeProfile.GattSubscribedClient>? m_subscribedClients;
     private static unsafe delegate* unmanaged<sbyte*, void> m_sendStringCallback;
@@ -180,16 +180,23 @@ class Program
             {
                 SendString("pong\n");
             }
+            else if (str.StartsWith("delay"))
+            {
+                SendString("OK\n");
+                var arg = str.Split(new char[] { '=' })[1];
+                var val = int.Parse(arg);
+                Thread.Sleep(val);
+            }
             else if (str.StartsWith("mv"))
             {
                 var args = str.Split(new char[] { '=' })[1].Split(',');
-                await m_virtualMouse.Move(int.Parse(args[0]), int.Parse(args[1]), 0);
+                await m_virtualMouse.Move(short.Parse(args[0]), short.Parse(args[1]), 0);
                 SendString("OK\n");
             }
             else if (str.StartsWith("mw"))
             {
                 var args = str.Split(new char[] { '=' })[1].Split(',');
-                await m_virtualMouse.Move(0, 0, int.Parse(args[0]));
+                await m_virtualMouse.Move(0, 0, short.Parse(args[0]));
                 SendString("OK\n");
             }
             else if (str.StartsWith("mb"))
