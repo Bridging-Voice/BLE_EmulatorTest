@@ -15,7 +15,7 @@ class Program
     private static VirtualKeyboard? m_virtualKeyboard;
     private static VirtualConsumer? m_virtualConsumer;
     private static VirtualMouse? m_virtualMouse;
-    private static string VER = "10.0";
+    private static string VER = "10.1";
     private static BlockingCollection<string> m_cmds = new BlockingCollection<string>();
     private static IReadOnlyList<Windows.Devices.Bluetooth.GenericAttributeProfile.GattSubscribedClient>? m_subscribedClients;
     private static unsafe delegate* unmanaged<sbyte*, void> m_sendStringCallback;
@@ -176,74 +176,82 @@ class Program
             LogDebug("got cmd: " + str);
             SendString("\x06\n"); // ACK when we get to actually processing it
 
-            if (str.StartsWith("ping"))
+            try
             {
-                SendString("pong\n");
-            }
-            else if (str.StartsWith("delay"))
-            {
-                SendString("OK\n");
-                var arg = str.Split(new char[] { '=' })[1];
-                var val = int.Parse(arg);
-                Thread.Sleep(val);
-            }
-            else if (str.StartsWith("mv"))
-            {
-                var args = str.Split(new char[] { '=' })[1].Split(',');
-                await m_virtualMouse.Move(short.Parse(args[0]), short.Parse(args[1]), 0);
-                SendString("OK\n");
-            }
-            else if (str.StartsWith("mw"))
-            {
-                var args = str.Split(new char[] { '=' })[1].Split(',');
-                await m_virtualMouse.Move(0, 0, short.Parse(args[0]));
-                SendString("OK\n");
-            }
-            else if (str.StartsWith("mb"))
-            {
-                var args = str.Split(new char[] { '=' })[1].Split(',');
-                if (args[0] == "l")
+                if (str.StartsWith("ping"))
                 {
-                    if (args[1] == "1")
-                    {
-                        await m_virtualMouse.Press();
-                    }
-                    else if (args[1] == "0")
-                    {
-                        await m_virtualMouse.Release();
-                    }
+                    SendString("pong\n");
                 }
-                SendString("OK\n");
-            }
-            else if (str.StartsWith("kb"))
-            {
-                var args = str.Split(new char[] { '=' })[1].Split('-');
-                var reportValue = new byte[VirtualKeyboard.c_sizeOfReportDataInBytes];
-                for (int i = 0; i < args.Length; i++)
+                else if (str.StartsWith("delay"))
                 {
-                    reportValue[i] = byte.Parse(args[i], NumberStyles.HexNumber);
+                    SendString("OK\n");
+                    var arg = str.Split(new char[] { '=' })[1];
+                    var val = int.Parse(arg);
+                    Thread.Sleep(val);
                 }
-                await m_virtualKeyboard.DirectSendReport(reportValue);
-                SendString("OK\n");
+                else if (str.StartsWith("mv"))
+                {
+                    var args = str.Split(new char[] { '=' })[1].Split(',');
+                    await m_virtualMouse.Move(short.Parse(args[0]), short.Parse(args[1]), 0);
+                    SendString("OK\n");
+                }
+                else if (str.StartsWith("mw"))
+                {
+                    var args = str.Split(new char[] { '=' })[1].Split(',');
+                    await m_virtualMouse.Move(0, 0, short.Parse(args[0]));
+                    SendString("OK\n");
+                }
+                else if (str.StartsWith("mb"))
+                {
+                    var args = str.Split(new char[] { '=' })[1].Split(',');
+                    if (args[0] == "l")
+                    {
+                        if (args[1] == "1")
+                        {
+                            await m_virtualMouse.Press();
+                        }
+                        else if (args[1] == "0")
+                        {
+                            await m_virtualMouse.Release();
+                        }
+                    }
+                    SendString("OK\n");
+                }
+                else if (str.StartsWith("kb"))
+                {
+                    var args = str.Split(new char[] { '=' })[1].Split('-');
+                    var reportValue = new byte[VirtualKeyboard.c_sizeOfReportDataInBytes];
+                    for (int i = 0; i < args.Length; i++)
+                    {
+                        reportValue[i] = byte.Parse(args[i], NumberStyles.HexNumber);
+                    }
+                    await m_virtualKeyboard.DirectSendReport(reportValue);
+                    SendString("OK\n");
+                }
+                else if (str.StartsWith("cr"))
+                {
+                    var arg = str.Split(new char[] { '=' })[1];
+                    var val = byte.Parse(arg, NumberStyles.HexNumber);
+                    var reportValue = new byte[VirtualConsumer.c_sizeOfReportDataInBytes];
+
+                    reportValue[0] = (byte)(val & 0xFF);
+                    reportValue[1] = (byte)(val >> 8);
+
+                    LogDebug($"ConsumerReport: {reportValue[0]:X},{reportValue[1]:X}");
+
+                    await m_virtualConsumer.DirectSendReport(reportValue);
+                    SendString("OK\n");
+                }
+                else
+                {
+                    LogDebug("UNKNOWN CMD!!!");
+                    SendString("ERROR=unknown cmd\n");
+                }
             }
-            else if (str.StartsWith("cr"))
+            catch (Exception e)
             {
-                var arg = str.Split(new char[] { '=' })[1];
-                var val = byte.Parse(arg, NumberStyles.HexNumber);
-                var reportValue = new byte[VirtualConsumer.c_sizeOfReportDataInBytes];
-
-                reportValue[0] = (byte)(val & 0xFF);
-                reportValue[1] = (byte)(val >> 8);
-
-                LogDebug($"ConsumerReport: {reportValue[0]:X},{reportValue[1]:X}");
-
-                await m_virtualConsumer.DirectSendReport(reportValue);
-                SendString("OK\n");
-            }
-            else
-            {
-                LogDebug("UNKNOWN CMD!!!");
-                SendString("ERROR=unknown cmd\n");
+                LogInfo($"cmd:{str} - Error: {e.ToString()}");
+                SendString("DEVICE=BLE_ERROR\n");
             }
         }
     }
