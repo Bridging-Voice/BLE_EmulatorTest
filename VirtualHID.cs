@@ -1,37 +1,52 @@
-﻿using System.Runtime.InteropServices.WindowsRuntime;
-using System.Diagnostics;
-
+﻿using System.Diagnostics;
+using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Storage.Streams;
 
 namespace BLE_EmulatorTest;
-class VirtualMouse
+class VirtualHID
 {
     private static readonly GattLocalCharacteristicParameters c_hidInputReportParameters = new GattLocalCharacteristicParameters
     {
         CharacteristicProperties = GattCharacteristicProperties.Read | GattCharacteristicProperties.Notify,
-        ReadProtectionLevel = GattProtectionLevel.EncryptionRequired
-    };
-
-    private static readonly uint c_hidReportReferenceDescriptorShortUuid = 0x2908;
-
-    private static readonly GattLocalDescriptorParameters c_hidReportReferenceParameters = new GattLocalDescriptorParameters
-    {
         ReadProtectionLevel = GattProtectionLevel.EncryptionRequired,
-        StaticValue = new byte[]
-        {
-            0x02, // Report ID: 1
-            0x01  // Report Type: Input
-        }.AsBuffer()
+        WriteProtectionLevel = GattProtectionLevel.EncryptionRequired
     };
 
     private static readonly GattLocalCharacteristicParameters c_hidReportMapParameters = new GattLocalCharacteristicParameters
     {
         CharacteristicProperties = GattCharacteristicProperties.Read,
-        ReadProtectionLevel = GattProtectionLevel.EncryptionRequired,                        
+        ReadProtectionLevel = GattProtectionLevel.EncryptionRequired,
+        WriteProtectionLevel = GattProtectionLevel.EncryptionRequired,
         StaticValue = new byte[]
         {
+            0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
+            0x09, 0x06,        // Usage (Keyboard)
+            0xA1, 0x01,        // Collection (Application)
+            0x85, 0x01,        //   Report ID
+            0x05, 0x07,        //   Usage Page (Kbrd/Keypad)
+            0x19, 0xE0,        //   Usage Minimum (0xE0)
+            0x29, 0xE7,        //   Usage Maximum (0xE7)
+            0x15, 0x00,        //   Logical Minimum (0)
+            0x25, 0x01,        //   Logical Maximum (1)
+            0x95, 0x08,        //   Report Count (8)
+            0x75, 0x01,        //   Report Size (1)
+            0x81, 0x02,        //   Input (Data,Var,Abs,No Wrap,Linear,Preferred State,No Null Position)
+            0x95, 0x01,        //   Report Count (1)
+            0x75, 0x08,        //   Report Size (8)
+            0x81, 0x01,        //   Input (Const,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
+            0x05, 0x07,        //   Usage Page (Kbrd/Keypad)
+            0x19, 0x00,        //   Usage Minimum (0x00)
+            0x2a, 0xff, 0x00,  //   Usage Maximum (255)
+            0x15, 0x00,        //   Logical Minimum (0)
+            0x26, 0xff, 0x00,  //   Logical Maximum (255)
+            0x95, 0x06,        //   Report Count (6)
+            0x75, 0x08,        //   Report Size (8)
+            0x81, 0x00,        //   Input (Data,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
+            0xC0,              // End Collection
+
+
             0x05, 0x01,        // Usage Page (Generic Desktop Ctrls)
             0x09, 0x02,        // Usage (Mouse)
             0xA1, 0x01,        // Collection (Application)
@@ -59,6 +74,21 @@ class VirtualMouse
             0x81, 0x06,        //     Input (Data,Var,Rel,No Wrap,Linear,Preferred State,No Null Position)
             0xC0,              //   End Collection
             0xC0,              // End Collection
+
+            0x05, 0x0C,        // Usage Page (Consumer)
+            0x09, 0x01,        // Usage (Consumer Control)
+            0xA1, 0x01,        // Collection (Application)
+            0x85, 0x03,        //   Report ID (3)
+            0x05, 0x0C,        //   Usage Page (Consumer)
+            0x15, 0x00,        //   Logical Minimum (0)
+            0x26, 0xff, 0x03,  //   Logical Maximum (0x3FF)
+            0x19, 0x00,        //   Usage Minimum (0x00)
+            0x2a, 0xff, 0x03,  //   Usage Maximum (0x3FF)
+            0x75, 0x10,        //   Report Size (16)
+            0x95, 0x01,        //   Report Count (1)
+            0x81, 0x00,        //   Input (Data,Array,Abs,No Wrap,Linear,Preferred State,No Null Position)
+            0xC0,              // End Collection
+
         }.AsBuffer()
     };
 
@@ -80,18 +110,13 @@ class VirtualMouse
         WriteProtectionLevel = GattProtectionLevel.Plain
     };
 
-    private static readonly GattLocalCharacteristicParameters c_batteryLevelParameters = new GattLocalCharacteristicParameters
-    {
-        CharacteristicProperties = GattCharacteristicProperties.Read | GattCharacteristicProperties.Notify,
-        ReadProtectionLevel = GattProtectionLevel.Plain
-    };
-
-    private static readonly uint c_sizeOfReportDataInBytes = 0x7;
+    public static readonly uint c_mouseReportSize = 0x7;
+    public static readonly uint c_keyboardReportSize = 0x8;
+    public static readonly uint c_consumerReportSize = 0x2;
 
     private GattServiceProvider m_hidServiceProvider;
     private GattLocalService m_hidService;
-    private GattLocalCharacteristic m_hidReport;
-    private GattLocalDescriptor m_hidReportReference;
+    private GattLocalCharacteristic m_keyboardReport, m_consumerReport, m_mouseReport;
     private GattLocalCharacteristic m_hidReportMap;
     private GattLocalCharacteristic m_hidInformation;
     private GattLocalCharacteristic m_hidControlPoint;
@@ -104,7 +129,6 @@ class VirtualMouse
     private bool m_lastRightDown = false;
 
     public delegate void SubscribedHidClientsChangedHandler(IReadOnlyList<GattSubscribedClient> subscribedClients);
-    public event SubscribedHidClientsChangedHandler SubscribedHidClientsChanged;
 
     private static string GetStringFromBuffer(IBuffer buffer)
     {
@@ -136,87 +160,51 @@ class VirtualMouse
         UnpublishService(m_hidServiceProvider);
     }
 
-    public async Task Move(short mx, short my, short wheel)
+    private async Task<GattLocalCharacteristic> setupReport(byte reportID)
     {
-        try
+        // HID Report characteristic.
+        var reportResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.Report, c_hidInputReportParameters);
+        if (reportResult.Error != BluetoothError.Success)
         {
-            await SendMouseState(m_lastLeftDown, m_lastRightDown, mx, my, wheel);
-            await Task.Delay(40);
+            Debug.WriteLine("Failed to create the report characteristic: " + reportResult.Error);
+            throw new Exception("Failed to create the report characteristic: " + reportResult.Error);
         }
-        catch (Exception e)
-        {
-            Debug.WriteLine("Failed to change the mouse state due to: " + e.Message);
-        }
-    }
+        GattLocalCharacteristic report = reportResult.Characteristic;
 
-    public async Task Press()
-    {
-        try
+        GattLocalDescriptorParameters referenceParams = new GattLocalDescriptorParameters
         {
-            await SendMouseState(true, false, 0, 0, 0);
-        }
-        catch (Exception e)
-        {
-            Debug.WriteLine("Failed to change the mouse state due to: " + e.Message);
-        }
-    }
+            ReadProtectionLevel = GattProtectionLevel.EncryptionRequired,
+            WriteProtectionLevel = GattProtectionLevel.EncryptionRequired,
+            StaticValue = new byte[] { reportID, 0x01 }.AsBuffer()
+        };
 
-    public async Task Release()
-    {
-        try
+        // HID Report Reference descriptor.
+        var referenceResult = await report.CreateDescriptorAsync(BluetoothUuidHelper.FromShortId(0x2908), referenceParams);
+        if (referenceResult.Error != BluetoothError.Success)
         {
-            await SendMouseState(false, false, 0, 0, 0);
+            Debug.WriteLine("Failed to create the report reference descriptor: " + referenceResult.Error);
+            throw new Exception("Failed to create the report reference descriptor: " + referenceResult.Error);
         }
-        catch (Exception e)
-        {
-            Debug.WriteLine("Failed to change the mouse state due to: " + e.Message);
-        }
-    }
 
-    public async Task Click()
-    {
-        try
-        {
-            await SendMouseState(true, false, 0, 0, 0);
-            await Task.Delay(40);
-            await SendMouseState(false, false, 0, 0, 0);
-        }
-        catch (Exception e)
-        {
-            Debug.WriteLine("Failed to change the mouse state due to: " + e.Message);
-        }
+        report.SubscribedClientsChanged += SubscribedClientsChanged;
+        return report;
     }
 
     private async Task CreateHidService()
     {
         // HID service.
-        var hidServiceProviderCreationResult = await GattServiceProvider.CreateAsync(GattServiceUuids.HumanInterfaceDevice);
-        if (hidServiceProviderCreationResult.Error != BluetoothError.Success)
+        var providerResult = await GattServiceProvider.CreateAsync(GattServiceUuids.HumanInterfaceDevice);
+        if (providerResult.Error != BluetoothError.Success)
         {
-            Debug.WriteLine("Failed to create the HID service provider: " + hidServiceProviderCreationResult.Error);
-            throw new Exception("Failed to create the HID service provider: " + hidServiceProviderCreationResult.Error);
+            Debug.WriteLine("Failed to create the HID service provider: " + providerResult.Error);
+            throw new Exception("Failed to create the HID service provider: " + providerResult.Error);
         }
-        m_hidServiceProvider = hidServiceProviderCreationResult.ServiceProvider;
+        m_hidServiceProvider = providerResult.ServiceProvider;
         m_hidService = m_hidServiceProvider.Service;
 
-        // HID Report characteristic.
-        var hidReportCharacteristicCreationResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.Report, c_hidInputReportParameters);
-        if (hidReportCharacteristicCreationResult.Error != BluetoothError.Success)
-        {
-            Debug.WriteLine("Failed to create the mouse report characteristic: " + hidReportCharacteristicCreationResult.Error);
-            throw new Exception("Failed to create the mouse report characteristic: " + hidReportCharacteristicCreationResult.Error);
-        }
-        m_hidReport = hidReportCharacteristicCreationResult.Characteristic;
-        m_hidReport.SubscribedClientsChanged += SubscribedClientsChanged;
-
-        // HID Report Reference descriptor.
-        var hidReportReferenceCreationResult = await m_hidReport.CreateDescriptorAsync(BluetoothUuidHelper.FromShortId(c_hidReportReferenceDescriptorShortUuid), c_hidReportReferenceParameters);
-        if (hidReportReferenceCreationResult.Error != BluetoothError.Success)
-        {
-            Debug.WriteLine("Failed to create the mouse report reference descriptor: " + hidReportReferenceCreationResult.Error);
-            throw new Exception("Failed to create the mouse report reference descriptor: " + hidReportReferenceCreationResult.Error);
-        }
-        m_hidReportReference = hidReportReferenceCreationResult.Descriptor;
+        m_keyboardReport = await setupReport(1);
+        m_mouseReport = await setupReport(2);
+        m_consumerReport = await setupReport(3);
 
         // HID Report Map characteristic.
         var hidReportMapCharacteristicCreationResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.ReportMap, c_hidReportMapParameters);
@@ -269,7 +257,6 @@ class VirtualMouse
                 (provider.AdvertisementStatus == GattServiceProviderAdvertisementStatus.Aborted))
             {
                 provider.StopAdvertising();
-                SubscribedHidClientsChanged?.Invoke(null);
             }
         }
         catch (Exception e)
@@ -299,10 +286,74 @@ class VirtualMouse
         Debug.WriteLine("HID advertisement status changed to " + args.Status);
     }
 
-    private void SubscribedClientsChanged(GattLocalCharacteristic sender, object args)
+    private async void SubscribedClientsChanged(GattLocalCharacteristic sender, object args)
     {
-        Debug.WriteLine("Number of clients now registered for mouse notifications: " + sender.SubscribedClients.Count);
-        SubscribedHidClientsChanged?.Invoke(sender.SubscribedClients);
+        try
+        {
+            if (sender.SubscribedClients != null)
+            {
+                foreach (var client in sender.SubscribedClients)
+                {
+                    var leDevice = await BluetoothLEDevice.FromIdAsync(client.Session.DeviceId.Id);
+
+                    // this one we'll use to actually track connect/disconnect
+                    if (sender == m_mouseReport)
+                    {
+                        Program.LogInfo($"mouse subscription: {leDevice.DeviceId} - {leDevice.Name}");
+                        await Program.deviceSubscribed(leDevice);
+                    }
+                    else if (sender == m_keyboardReport)
+                    {
+                        Program.LogInfo($"keyboard subscription: {leDevice.DeviceId} - {leDevice.Name}");
+                    }
+                    else if (sender == m_consumerReport)
+                    {
+                        Program.LogInfo($"consumer subscription: {leDevice.DeviceId} - {leDevice.Name}");
+                    }
+                }
+            }
+        }
+        catch (Exception e)
+        {
+            Program.LogInfo($"ERROR=SubscribedClientsChanged exception: {e}");
+        }
+    }
+
+    public async Task Move(short mx, short my, short wheel)
+    {
+        try
+        {
+            await SendMouseState(m_lastLeftDown, m_lastRightDown, mx, my, wheel);
+            await Task.Delay(40);
+        }
+        catch (Exception e)
+        {
+            Debug.WriteLine("Failed to change the mouse state due to: " + e.Message);
+        }
+    }
+
+    public async Task Press()
+    {
+        try
+        {
+            await SendMouseState(true, false, 0, 0, 0);
+        }
+        catch (Exception e)
+        {
+            Debug.WriteLine("Failed to change the mouse state due to: " + e.Message);
+        }
+    }
+
+    public async Task Release()
+    {
+        try
+        {
+            await SendMouseState(false, false, 0, 0, 0);
+        }
+        catch (Exception e)
+        {
+            Debug.WriteLine("Failed to change the mouse state due to: " + e.Message);
+        }
     }
 
     private async Task SendMouseState(bool leftDown, bool rightDown, short mx, short my, short wheel)
@@ -314,13 +365,13 @@ class VirtualMouse
                 return;
             }
 
-            if (m_hidReport.SubscribedClients.Count == 0)
+            if (m_mouseReport.SubscribedClients.Count == 0)
             {
                 Debug.WriteLine("No clients are currently subscribed to the mouse report.");
                 return;
             }
 
-            var reportValue = new byte[c_sizeOfReportDataInBytes];
+            var reportValue = new byte[c_mouseReportSize];
 
             // The first byte of the report data is buttons bitfield.
             reportValue[0] = (byte)((leftDown ? (1 << 0) : 0) | (rightDown ? (1 << 1) : 0));
@@ -338,10 +389,30 @@ class VirtualMouse
             m_lastLeftDown = leftDown;
             m_lastRightDown = rightDown;
 
-            // Waiting for this operation to complete is no longer necessary since now ordering of notifications
-            // is guaranteed for each client. Not waiting for it to complete reduces delays and lags.
-            // Note that doing this makes us unable to know if the notification failed to be sent.
-            await m_hidReport.NotifyValueAsync(reportValue.AsBuffer());
+            // we'll wait for op to complete, but not necessary
+            await m_mouseReport.NotifyValueAsync(reportValue.AsBuffer());
         }
+    }
+
+    public async Task SendKeyboardReport(byte[] reportValue)
+    {
+        if (reportValue.Length != c_keyboardReportSize)
+        {
+            Console.WriteLine("wrong keyboard report size!");
+            return;
+        }
+
+        await m_keyboardReport.NotifyValueAsync(reportValue.AsBuffer());
+    }
+
+    public async Task SendConsumerReport(byte[] reportValue)
+    {
+        if (reportValue.Length != c_consumerReportSize)
+        {
+            Console.WriteLine("wrong consumer report size!");
+            return;
+        }
+
+        await m_consumerReport.NotifyValueAsync(reportValue.AsBuffer());
     }
 }

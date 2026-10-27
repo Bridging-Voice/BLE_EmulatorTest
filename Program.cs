@@ -1,23 +1,19 @@
-﻿using System.Collections;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Globalization;
-using System.IO.Pipes;
+using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Text;
 using Windows.Devices.Bluetooth;
-using Windows.Devices.Input;
+using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Devices.Radios;
-using System.Runtime.InteropServices;
 
 namespace BLE_EmulatorTest;
 
 class Program
 {
-    private static VirtualKeyboard? m_virtualKeyboard;
-    private static VirtualConsumer? m_virtualConsumer;
-    private static VirtualMouse? m_virtualMouse;
-    private static string VER = "10.1";
+    private static VirtualHID? m_virtualHID;
+    private static string VER = "10.1c";
     private static BlockingCollection<string> m_cmds = new BlockingCollection<string>();
-    private static IReadOnlyList<Windows.Devices.Bluetooth.GenericAttributeProfile.GattSubscribedClient>? m_subscribedClients;
     private static unsafe delegate* unmanaged<sbyte*, void> m_sendStringCallback;
     private static unsafe delegate* unmanaged<sbyte*, void> m_sendLogCallback;
 
@@ -29,27 +25,15 @@ class Program
     {
         try
         {
-            m_virtualKeyboard = new VirtualKeyboard();
-            m_virtualKeyboard.SubscribedHidClientsChanged += VirtualKeyboard_SubscribedHidClientsChanged;
-            await m_virtualKeyboard.InitilizeAsync();
-            m_virtualKeyboard.Enable();
-
-            m_virtualConsumer = new VirtualConsumer();
-            m_virtualConsumer.SubscribedHidClientsChanged += VirtualConsumer_SubscribedHidClientsChanged;
-            await m_virtualConsumer.InitilizeAsync();
-            m_virtualConsumer.Enable();
-
-            m_virtualMouse = new VirtualMouse();
-            m_virtualMouse.SubscribedHidClientsChanged += VirtualMouse_SubscribedHidClientsChanged;
-            await m_virtualMouse.InitilizeAsync();
-            m_virtualMouse.Enable();
-
+            m_virtualHID = new VirtualHID();
+            await m_virtualHID.InitilizeAsync();
+            m_virtualHID.Enable();
             LogInfo("InitializeVirtualDevices - finished!");
             return true;
         }
         catch (Exception e)
         {
-            LogInfo($"Error: {e.ToString()}");
+            LogInfo($"Error: {e}");
             SendString("DEVICE=BLE_ERROR\n");
             return false;
         }
@@ -68,52 +52,26 @@ class Program
         }
     }
 
-    private static async void VirtualKeyboard_SubscribedHidClientsChanged(IReadOnlyList<Windows.Devices.Bluetooth.GenericAttributeProfile.GattSubscribedClient> subscribedClients)
+    public static async Task deviceSubscribed(BluetoothLEDevice leDevice)
     {
-        if (subscribedClients != null)
-        {
-            foreach (var client in subscribedClients)
-            {
-                var leDevice = await BluetoothLEDevice.FromIdAsync(client.Session.DeviceId.Id);
-                LogInfo("keyboard-subscribed: " + leDevice.Name);
-            }
-        }
-    }
+        leDevice.ConnectionStatusChanged += DeviceConnectionStatusChange;
+        SendString($"DEVICEID={leDevice.DeviceId}\n");
+        SendString($"DEVICE={leDevice.Name}\n");
 
-    private static async void VirtualConsumer_SubscribedHidClientsChanged(IReadOnlyList<Windows.Devices.Bluetooth.GenericAttributeProfile.GattSubscribedClient> subscribedClients)
-    {
-        if (subscribedClients != null)
-        {
-            foreach (var client in subscribedClients)
-            {
-                var leDevice = await BluetoothLEDevice.FromIdAsync(client.Session.DeviceId.Id);
-                LogInfo("consumer-subscribed: " + leDevice.Name);
-            }
-        }
-    }
-
-    // this one we'll use to actually track connect/disconnect
-    private static async void VirtualMouse_SubscribedHidClientsChanged(IReadOnlyList<Windows.Devices.Bluetooth.GenericAttributeProfile.GattSubscribedClient> subscribedClients)
-    {
-        m_subscribedClients = subscribedClients;
-        if (subscribedClients != null)
-        {
-            foreach (var client in subscribedClients)
-            {
-                var leDevice = await BluetoothLEDevice.FromIdAsync(client.Session.DeviceId.Id);
-                leDevice.ConnectionStatusChanged += DeviceConnectionStatusChange;
-                LogInfo("mouse-subscribed: " + leDevice.Name);
-                SendString($"DEVICE={leDevice.Name}\n");
-            }
-        }
+        GattSession session = await GattSession.FromDeviceIdAsync(leDevice.BluetoothDeviceId);
+        if (session != null)
+            session.MaintainConnection = true;
     }
 
     [UnmanagedCallersOnly(EntryPoint = "AddCmd")]
     public static unsafe void AddCmd(sbyte* _cmd)
     {
-        string cmd = Marshal.PtrToStringUTF8((IntPtr)_cmd);
-        m_cmds.Add(cmd);
-        LogDebug($"AddCmd: \"{cmd}\"");
+        string? cmd = Marshal.PtrToStringUTF8((IntPtr)_cmd);
+        if (cmd != null)
+        {
+            m_cmds.Add(cmd);
+            LogDebug($"AddCmd: \"{cmd}\"");
+        }
     }
 
     private static unsafe void SendString(string str)
@@ -192,13 +150,13 @@ class Program
                 else if (str.StartsWith("mv"))
                 {
                     var args = str.Split(new char[] { '=' })[1].Split(',');
-                    await m_virtualMouse.Move(short.Parse(args[0]), short.Parse(args[1]), 0);
+                    await m_virtualHID.Move(short.Parse(args[0]), short.Parse(args[1]), 0);
                     SendString("OK\n");
                 }
                 else if (str.StartsWith("mw"))
                 {
                     var args = str.Split(new char[] { '=' })[1].Split(',');
-                    await m_virtualMouse.Move(0, 0, short.Parse(args[0]));
+                    await m_virtualHID.Move(0, 0, short.Parse(args[0]));
                     SendString("OK\n");
                 }
                 else if (str.StartsWith("mb"))
@@ -208,11 +166,11 @@ class Program
                     {
                         if (args[1] == "1")
                         {
-                            await m_virtualMouse.Press();
+                            await m_virtualHID.Press();
                         }
                         else if (args[1] == "0")
                         {
-                            await m_virtualMouse.Release();
+                            await m_virtualHID.Release();
                         }
                     }
                     SendString("OK\n");
@@ -220,27 +178,32 @@ class Program
                 else if (str.StartsWith("kb"))
                 {
                     var args = str.Split(new char[] { '=' })[1].Split('-');
-                    var reportValue = new byte[VirtualKeyboard.c_sizeOfReportDataInBytes];
+                    var reportValue = new byte[VirtualHID.c_keyboardReportSize];
                     for (int i = 0; i < args.Length; i++)
                     {
                         reportValue[i] = byte.Parse(args[i], NumberStyles.HexNumber);
                     }
-                    await m_virtualKeyboard.DirectSendReport(reportValue);
+                    await m_virtualHID.SendKeyboardReport(reportValue);
                     SendString("OK\n");
                 }
                 else if (str.StartsWith("cr"))
                 {
                     var arg = str.Split(new char[] { '=' })[1];
                     var val = byte.Parse(arg, NumberStyles.HexNumber);
-                    var reportValue = new byte[VirtualConsumer.c_sizeOfReportDataInBytes];
+                    var reportValue = new byte[VirtualHID.c_consumerReportSize];
 
                     reportValue[0] = (byte)(val & 0xFF);
                     reportValue[1] = (byte)(val >> 8);
 
                     LogDebug($"ConsumerReport: {reportValue[0]:X},{reportValue[1]:X}");
 
-                    await m_virtualConsumer.DirectSendReport(reportValue);
+                    await m_virtualHID.SendConsumerReport(reportValue);
                     SendString("OK\n");
+                }
+                else if (str.StartsWith("reset"))
+                {
+                    SendString("OK\n");
+                    SendString("DEVICE=BLE_ERROR\n");
                 }
                 else
                 {
