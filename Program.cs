@@ -150,7 +150,7 @@ class Program
                     SendString("OK\n");
                     var arg = str.Split(new char[] { '=' })[1];
                     var val = int.Parse(arg);
-                    Thread.Sleep(val);
+                    await Task.Delay(val);
                 }
                 else if (str.StartsWith("mv"))
                 {

@@ -323,7 +323,6 @@ class VirtualHID
         try
         {
             await SendMouseState(m_lastLeftDown, m_lastRightDown, mx, my, wheel);
-            await Task.Delay(40);
         }
         catch (Exception e)
         {
@@ -366,7 +365,7 @@ class VirtualHID
 
             if (m_mouseReport.SubscribedClients.Count == 0)
             {
-                Program.LogInfo("No clients are currently subscribed to the mouse report.");
+                //Program.LogInfo("No clients are currently subscribed to the mouse report.");
                 return;
             }
 
@@ -388,8 +387,7 @@ class VirtualHID
             m_lastLeftDown = leftDown;
             m_lastRightDown = rightDown;
 
-            // we'll wait for op to complete, but not necessary
-            await m_mouseReport.NotifyValueAsync(reportValue.AsBuffer());
+            m_mouseReport.NotifyValueAsync(reportValue.AsBuffer());
         }
     }
 
@@ -401,7 +399,7 @@ class VirtualHID
             return;
         }
 
-        await m_keyboardReport.NotifyValueAsync(reportValue.AsBuffer());
+        m_keyboardReport.NotifyValueAsync(reportValue.AsBuffer());
     }
 
     public async Task SendConsumerReport(byte[] reportValue)
@@ -412,6 +410,6 @@ class VirtualHID
             return;
         }
 
-        await m_consumerReport.NotifyValueAsync(reportValue.AsBuffer());
+        m_consumerReport.NotifyValueAsync(reportValue.AsBuffer());
     }
 }
