@@ -1,5 +1,4 @@
-﻿using System.Diagnostics;
-using System.Runtime.InteropServices.WindowsRuntime;
+﻿using System.Runtime.InteropServices.WindowsRuntime;
 using Windows.Devices.Bluetooth;
 using Windows.Devices.Bluetooth.GenericAttributeProfile;
 using Windows.Storage.Streams;
@@ -166,7 +165,7 @@ class VirtualHID
         var reportResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.Report, c_hidInputReportParameters);
         if (reportResult.Error != BluetoothError.Success)
         {
-            Debug.WriteLine("Failed to create the report characteristic: " + reportResult.Error);
+            Program.LogInfo("ERROR: Failed to create the report characteristic: " + reportResult.Error);
             throw new Exception("Failed to create the report characteristic: " + reportResult.Error);
         }
         GattLocalCharacteristic report = reportResult.Characteristic;
@@ -182,7 +181,7 @@ class VirtualHID
         var referenceResult = await report.CreateDescriptorAsync(BluetoothUuidHelper.FromShortId(0x2908), referenceParams);
         if (referenceResult.Error != BluetoothError.Success)
         {
-            Debug.WriteLine("Failed to create the report reference descriptor: " + referenceResult.Error);
+            Program.LogInfo("ERROR: Failed to create the report reference descriptor: " + referenceResult.Error);
             throw new Exception("Failed to create the report reference descriptor: " + referenceResult.Error);
         }
 
@@ -196,7 +195,7 @@ class VirtualHID
         var providerResult = await GattServiceProvider.CreateAsync(GattServiceUuids.HumanInterfaceDevice);
         if (providerResult.Error != BluetoothError.Success)
         {
-            Debug.WriteLine("Failed to create the HID service provider: " + providerResult.Error);
+            Program.LogInfo("ERROR: Failed to create the HID service provider: " + providerResult.Error);
             throw new Exception("Failed to create the HID service provider: " + providerResult.Error);
         }
         m_hidServiceProvider = providerResult.ServiceProvider;
@@ -207,31 +206,31 @@ class VirtualHID
         m_consumerReport = await setupReport(3);
 
         // HID Report Map characteristic.
-        var hidReportMapCharacteristicCreationResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.ReportMap, c_hidReportMapParameters);
-        if (hidReportMapCharacteristicCreationResult.Error != BluetoothError.Success)
+        var hidReportMapResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.ReportMap, c_hidReportMapParameters);
+        if (hidReportMapResult.Error != BluetoothError.Success)
         {
-            Debug.WriteLine("Failed to create the HID report map characteristic: " + hidReportMapCharacteristicCreationResult.Error);
-            throw new Exception("Failed to create the HID report map characteristic: " + hidReportMapCharacteristicCreationResult.Error);
+            Program.LogInfo("ERROR: Failed to create the HID report map characteristic: " + hidReportMapResult.Error);
+            throw new Exception("Failed to create the HID report map characteristic: " + hidReportMapResult.Error);
         }
-        m_hidReportMap = hidReportMapCharacteristicCreationResult.Characteristic;
+        m_hidReportMap = hidReportMapResult.Characteristic;
 
         // HID Information characteristic.
-        var hidInformationCharacteristicCreationResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.HidInformation, c_hidInformationParameters);
-        if (hidInformationCharacteristicCreationResult.Error != BluetoothError.Success)
+        var hidInformationResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.HidInformation, c_hidInformationParameters);
+        if (hidInformationResult.Error != BluetoothError.Success)
         {
-            Debug.WriteLine("Failed to create the HID information characteristic: " + hidInformationCharacteristicCreationResult.Error);
-            throw new Exception("Failed to create the HID information characteristic: " + hidInformationCharacteristicCreationResult.Error);
+            Program.LogInfo("ERROR: Failed to create the HID information characteristic: " + hidInformationResult.Error);
+            throw new Exception("Failed to create the HID information characteristic: " + hidInformationResult.Error);
         }
-        m_hidInformation = hidInformationCharacteristicCreationResult.Characteristic;
+        m_hidInformation = hidInformationResult.Characteristic;
 
         // HID Control Point characteristic.
-        var hidControlPointCharacteristicCreationResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.HidControlPoint, c_hidControlPointParameters);
-        if (hidControlPointCharacteristicCreationResult.Error != BluetoothError.Success)
+        var hidControlPointResult = await m_hidService.CreateCharacteristicAsync(GattCharacteristicUuids.HidControlPoint, c_hidControlPointParameters);
+        if (hidControlPointResult.Error != BluetoothError.Success)
         {
-            Debug.WriteLine("Failed to create the HID control point characteristic: " + hidControlPointCharacteristicCreationResult.Error);
-            throw new Exception("Failed to create the HID control point characteristic: " + hidControlPointCharacteristicCreationResult.Error);
+            Program.LogInfo("ERROR: Failed to create the HID control point characteristic: " + hidControlPointResult.Error);
+            throw new Exception("Failed to create the HID control point characteristic: " + hidControlPointResult.Error);
         }
-        m_hidControlPoint = hidControlPointCharacteristicCreationResult.Characteristic;
+        m_hidControlPoint = hidControlPointResult.Characteristic;
         m_hidControlPoint.WriteRequested += HidControlPoint_WriteRequested;
 
         m_hidServiceProvider.AdvertisementStatusChanged += HidServiceProvider_AdvertisementStatusChanged;
@@ -261,7 +260,7 @@ class VirtualHID
         }
         catch (Exception e)
         {
-            Debug.WriteLine("Failed to stop advertising due to: " + e.Message);
+            Program.LogInfo("ERROR: Failed to stop advertising due to: " + e.Message);
         }
     }
 
@@ -271,19 +270,19 @@ class VirtualHID
         {
             var deferral = args.GetDeferral();
             var writeRequest = await args.GetRequestAsync();
-            Debug.WriteLine("Value written to HID Control Point: " + GetStringFromBuffer(writeRequest.Value));
+            Program.LogInfo("Value written to HID Control Point: " + GetStringFromBuffer(writeRequest.Value));
             // Control point only supports WriteWithoutResponse.
             deferral.Complete();
         }
         catch (Exception e)
         {
-            Debug.WriteLine("Failed to handle write to Hid Control Point due to: " + e.Message);
+            Program.LogInfo("ERROR: Failed to handle write to Hid Control Point due to: " + e.Message);
         }
     }
 
     private void HidServiceProvider_AdvertisementStatusChanged(GattServiceProvider sender, GattServiceProviderAdvertisementStatusChangedEventArgs args)
     {
-        Debug.WriteLine("HID advertisement status changed to " + args.Status);
+        Program.LogInfo("HID advertisement status changed to " + args.Status);
     }
 
     private async void SubscribedClientsChanged(GattLocalCharacteristic sender, object args)
@@ -328,7 +327,7 @@ class VirtualHID
         }
         catch (Exception e)
         {
-            Debug.WriteLine("Failed to change the mouse state due to: " + e.Message);
+            Program.LogInfo("ERROR: Failed to change the mouse state due to: " + e.Message);
         }
     }
 
@@ -340,7 +339,7 @@ class VirtualHID
         }
         catch (Exception e)
         {
-            Debug.WriteLine("Failed to change the mouse state due to: " + e.Message);
+            Program.LogInfo("ERROR: Failed to change the mouse state due to: " + e.Message);
         }
     }
 
@@ -352,7 +351,7 @@ class VirtualHID
         }
         catch (Exception e)
         {
-            Debug.WriteLine("Failed to change the mouse state due to: " + e.Message);
+            Program.LogInfo("ERROR: Failed to change the mouse state due to: " + e.Message);
         }
     }
 
@@ -367,7 +366,7 @@ class VirtualHID
 
             if (m_mouseReport.SubscribedClients.Count == 0)
             {
-                Debug.WriteLine("No clients are currently subscribed to the mouse report.");
+                Program.LogInfo("No clients are currently subscribed to the mouse report.");
                 return;
             }
 
@@ -385,7 +384,7 @@ class VirtualHID
             reportValue[5] = (byte)(wheel & 0xFF);
             reportValue[6] = (byte)((wheel >> 8) & 0xFF);
 
-            Debug.WriteLine("Sending mouse report value notification with data: " + GetStringFromBuffer(reportValue));
+            //Program.LogInfo("Sending mouse report value notification with data: " + GetStringFromBuffer(reportValue));
             m_lastLeftDown = leftDown;
             m_lastRightDown = rightDown;
 

@@ -1,6 +1,5 @@
 ﻿using System.Collections.Concurrent;
 using System.Globalization;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using Windows.Devices.Bluetooth;
@@ -12,12 +11,13 @@ namespace BLE_EmulatorTest;
 class Program
 {
     private static VirtualHID? m_virtualHID;
-    private static string VER = "10.1c";
+    private static string VER = "10.1d";
     private static BlockingCollection<string> m_cmds = new BlockingCollection<string>();
     private static unsafe delegate* unmanaged<sbyte*, void> m_sendStringCallback;
     private static unsafe delegate* unmanaged<sbyte*, void> m_sendLogCallback;
 
     public static void LogInfo(string message) { SendLog(message); }
+    //public static void LogInfo(string message) { Console.WriteLine(message); }
     public static void LogDebug(string message) { /*SendLog(message);*/ }
 
 
@@ -76,6 +76,11 @@ class Program
 
     private static unsafe void SendString(string str)
     {
+        /*
+        Console.WriteLine("SendString: " + str);
+        return;
+        */
+
         if (m_sendStringCallback is not null)
         {
             byte[] utf8Bytes = Encoding.UTF8.GetBytes(str + "\0");
@@ -251,5 +256,24 @@ class Program
         SendString("DEVICE=NONE\n");
         run_server().GetAwaiter().GetResult();
         LogInfo("Start - finished!");
+    }
+
+    // for testing standalone
+    public async static Task Main()
+    {
+        if (!await GetBluetoothIsEnabled() || !await InitializeVirtualDevices())
+        {
+            SendString("DEVICE=BLE_ERROR\n");
+            LogInfo("exiting run_server");
+            return;
+        }
+
+        while (true)
+        {
+            await m_virtualHID.Move(1000, 0, 0);
+            Thread.Sleep(100);
+            await m_virtualHID.Move(-1000, 0, 0);
+            Thread.Sleep(100);
+        }
     }
 }
